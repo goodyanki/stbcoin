@@ -6,7 +6,14 @@ import { useContract } from '../context/ContractContext'
 const { Text } = Typography
 
 export function Dashboard() {
+<<<<<<< HEAD
     const { data, ethPrice, protocolMetrics, backendHealthy } = useContract()
+=======
+    const { data, ethPrice, mcrPercent } = useContract()
+    const distanceToLiquidation = ethPrice > 0 ? ((ethPrice - data.liquidationPrice) / ethPrice) * 100 : 0
+
+
+>>>>>>> fc1c83b4b4e08fda26eab910ce060c8a23cd4354
 
     const healthColor = (factor: string) => {
         switch (factor) {
@@ -79,7 +86,11 @@ export function Dashboard() {
                             size="small"
                         />
                         <div style={{ textAlign: 'right', marginTop: 4 }}>
+<<<<<<< HEAD
                             <Text type="secondary" style={{ fontSize: 12 }}>Min 150%</Text>
+=======
+                            <Text type="secondary" style={{ fontSize: 12 }}>最低 {mcrPercent.toFixed(0)}%</Text>
+>>>>>>> fc1c83b4b4e08fda26eab910ce060c8a23cd4354
                         </div>
                     </Card>
                 </Col>
@@ -117,7 +128,11 @@ export function Dashboard() {
                     <Col style={{ textAlign: 'right' }}>
                         <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Distance to liquidation</Text>
                         <Text strong style={{ fontSize: 20, color: ethPrice > data.liquidationPrice ? '#52c41a' : '#ff4d4f' }}>
+<<<<<<< HEAD
                             {ethPrice > 0 ? (((ethPrice - data.liquidationPrice) / ethPrice) * 100).toFixed(2) : '0.00'}%
+=======
+                            {formatNumber(distanceToLiquidation, 2)}%
+>>>>>>> fc1c83b4b4e08fda26eab910ce060c8a23cd4354
                         </Text>
                     </Col>
                 </Row>
