@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend/prisma:/app/prisma
+      - ./backend/dev.db:/app/dev.db
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "4173:4173"
+    environment:
+      - VITE_BACKEND_URL=http://localhost:8080
+      - VITE_STABLE_VAULT_ADDRESS=${VITE_STABLE_VAULT_ADDRESS}
+      - VITE_ORACLE_HUB_ADDRESS=${VITE_ORACLE_HUB_ADDRESS}
+      - VITE_STB_TOKEN_ADDRESS=${VITE_STB_TOKEN_ADDRESS}
+      - VITE_WETH_ADDRESS=${VITE_WETH_ADDRESS}
+

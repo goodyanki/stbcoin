@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model VaultState {
+  id              Int      @id @default(autoincrement())
+  owner           String   @unique
+  collateral      String
+  debtPrincipal   String
+  accruedFee      String
+  debtWithFee     String
+  collateralRatio String
+  health          String
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+}
+
+model LiquidationEvent {
+  id            Int      @id @default(autoincrement())
+  txHash        String   @unique
+  owner         String
+  liquidator    String
+  repayAmount   String
+  seizedAmount  String
+  badDebtDelta  String
+  blockNumber   Int
+  blockTime     DateTime
+  createdAt     DateTime @default(now())
+}
+
+model OracleSample {
+  id          Int      @id @default(autoincrement())
+  source      String
+  price       String
+  staleness   Int
+  deviation   Int
+  sampledAt   DateTime
+  createdAt   DateTime @default(now())
+}
+
+model KeeperRun {
+  id        Int      @id @default(autoincrement())
+  runAt     DateTime
+  scanned   Int
+  attempted Int
+  succeeded Int
+  failed    Int
+  durationMs Int
+  note      String?
+  createdAt DateTime @default(now())
+}
+
