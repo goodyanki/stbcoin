@@ -1,109 +1,129 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
-import { useAccount } from 'wagmi'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { formatEther } from 'viem'
+import { useAccount, usePublicClient } from 'wagmi'
+import { CONTRACTS, contractsReady, ORACLE_ABI, STABILITY_ENGINE_ABI, VAULT_MANAGER_ABI } from '../contracts'
 
 export interface UserPosition {
-    collateral: number // ETH
-    debt: number // Stablecoin
-    collateralRatio: number // %
-    liquidationPrice: number
-    healthFactor: 'Safe' | 'Warning' | 'Danger'
-    maxLTV: number
+  collateral: number
+  debt: number
+  collateralRatio: number
+  liquidationPrice: number
+  healthFactor: 'Safe' | 'Warning' | 'Danger'
+  maxLTV: number
+  exists: boolean
 }
 
 interface ContractContextType {
-    data: UserPosition
-    ethPrice: number
-    setEthPrice: (price: number) => void
-    refresh: () => void
-    updatePosition: (type: 'deposit' | 'mint' | 'repay' | 'withdraw', amount: number) => void
+  data: UserPosition
+  ethPrice: number
+  mcrPercent: number
+  contractsReady: boolean
+  refresh: () => Promise<void>
+}
+
+const emptyPosition: UserPosition = {
+  collateral: 0,
+  debt: 0,
+  collateralRatio: 0,
+  liquidationPrice: 0,
+  healthFactor: 'Safe',
+  maxLTV: 0,
+  exists: false,
 }
 
 const ContractContext = createContext<ContractContextType | undefined>(undefined)
 
 export function ContractProvider({ children }: { children: ReactNode }) {
-    const { isConnected } = useAccount()
-    const [ethPrice, setEthPrice] = useState(2500)
+  const { address, isConnected } = useAccount()
+  const publicClient = usePublicClient()
 
-    // Single source of truth for user position
-    const [collateral, setCollateral] = useState(0)
-    const [debt, setDebt] = useState(0)
+  const [ethPrice, setEthPrice] = useState(0)
+  const [mcrPercent, setMcrPercent] = useState(150)
+  const [data, setData] = useState<UserPosition>(emptyPosition)
 
-    const [data, setData] = useState<UserPosition>({
-        collateral: 0,
-        debt: 0,
-        collateralRatio: 0,
-        liquidationPrice: 0,
-        healthFactor: 'Safe',
-        maxLTV: 1.5
-    })
-
-    // Initial load simulation
-    useEffect(() => {
-        if (isConnected && collateral === 0 && debt === 0) {
-            setCollateral(10.5)
-            setDebt(15000)
-        } else if (!isConnected) {
-            setCollateral(0)
-            setDebt(0)
-        }
-    }, [isConnected])
-
-    // Recalculate derived data whenever state changes
-    useEffect(() => {
-        if (!isConnected || collateral === 0) {
-            setData({
-                collateral: 0,
-                debt: 0,
-                collateralRatio: 0,
-                liquidationPrice: 0,
-                healthFactor: 'Safe',
-                maxLTV: 1.5
-            })
-            return
-        }
-
-        const cr = debt > 0 ? (collateral * ethPrice / debt) * 100 : 9999 // Infinite if no debt
-
-        let health: 'Safe' | 'Warning' | 'Danger' = 'Safe'
-        if (cr < 110) health = 'Danger'
-        else if (cr < 150) health = 'Warning'
-
-        // Liquidation Price calculation:
-        // CR = (Col * Price) / Debt * 100
-        // Liquidation when CR = 110
-        // 110 = (Col * Price) / Debt * 100
-        // 1.1 = (Col * Price) / Debt
-        // Price = (1.1 * Debt) / Col
-        const liqPrice = collateral > 0 ? (1.1 * debt) / collateral : 0
-
-        setData({
-            collateral,
-            debt,
-            collateralRatio: cr,
-            liquidationPrice: liqPrice,
-            healthFactor: health,
-            maxLTV: 1.5
-        })
-    }, [isConnected, ethPrice, collateral, debt])
-
-    const updatePosition = (type: 'deposit' | 'mint' | 'repay' | 'withdraw', amount: number) => {
-        switch (type) {
-            case 'deposit': setCollateral(prev => prev + amount); break;
-            case 'mint': setDebt(prev => prev + amount); break;
-            case 'repay': setDebt(prev => Math.max(0, prev - amount)); break;
-            case 'withdraw': setCollateral(prev => Math.max(0, prev - amount)); break;
-        }
+  const refresh = useCallback(async () => {
+    if (!isConnected || !address || !publicClient || !contractsReady) {
+      setData(emptyPosition)
+      setEthPrice(0)
+      return
     }
 
-    return (
-        <ContractContext.Provider value={{ data, ethPrice, setEthPrice, refresh: () => { }, updatePosition }}>
-            {children}
-        </ContractContext.Provider>
-    )
+    try {
+      const [vaultResult, rawCr, rawPrice, rawMcr] = await Promise.all([
+        publicClient.readContract({
+          address: CONTRACTS.vaultManager!,
+          abi: VAULT_MANAGER_ABI,
+          functionName: 'get_vault',
+          args: [address],
+        }),
+        publicClient.readContract({
+          address: CONTRACTS.vaultManager!,
+          abi: VAULT_MANAGER_ABI,
+          functionName: 'collateral_ratio',
+          args: [address],
+        }),
+        publicClient.readContract({
+          address: CONTRACTS.oracle!,
+          abi: ORACLE_ABI,
+          functionName: 'get_price',
+        }),
+        publicClient.readContract({
+          address: CONTRACTS.stabilityEngine!,
+          abi: STABILITY_ENGINE_ABI,
+          functionName: 'mcr',
+        }),
+      ])
+
+      const { collateral: collateralRaw, debt: debtRaw, exists } = vaultResult as {
+        collateral: bigint
+        debt: bigint
+        exists: boolean
+      }
+
+      const collateral = Number(formatEther(collateralRaw))
+      const debt = Number(formatEther(debtRaw))
+      const nextEthPrice = Number(formatEther(rawPrice as bigint))
+      const nextMcrPercent = Number(rawMcr as bigint) * 100 / 1e18
+
+      const crRaw = rawCr as bigint
+      const crPercent = debtRaw === 0n || crRaw > 10n ** 36n ? 9999 : Number(crRaw) * 100 / 1e18
+
+      let health: 'Safe' | 'Warning' | 'Danger' = 'Safe'
+      if (crPercent < nextMcrPercent) health = 'Danger'
+      else if (crPercent < nextMcrPercent + 20) health = 'Warning'
+
+      const liquidationPrice = collateralRaw > 0n && debtRaw > 0n
+        ? Number(formatEther(((rawMcr as bigint) * debtRaw) / collateralRaw))
+        : 0
+
+      setEthPrice(nextEthPrice)
+      setMcrPercent(nextMcrPercent)
+      setData({
+        collateral,
+        debt,
+        collateralRatio: crPercent,
+        liquidationPrice,
+        healthFactor: health,
+        maxLTV: nextMcrPercent > 0 ? 100 / nextMcrPercent : 0,
+        exists,
+      })
+    } catch {
+      setData(emptyPosition)
+      setEthPrice(0)
+    }
+  }, [address, isConnected, publicClient])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const value = useMemo(() => ({ data, ethPrice, mcrPercent, contractsReady, refresh }), [data, ethPrice, mcrPercent, refresh])
+
+  return <ContractContext.Provider value={value}>{children}</ContractContext.Provider>
 }
 
 export const useContract = () => {
-    const context = useContext(ContractContext)
-    if (!context) throw new Error('useContract must be used within a ContractProvider')
-    return context
+  const context = useContext(ContractContext)
+  if (!context) throw new Error('useContract must be used within a ContractProvider')
+  return context
 }

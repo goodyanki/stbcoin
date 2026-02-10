@@ -5,7 +5,8 @@ import { SafetyCertificateOutlined, AlertOutlined, WarningOutlined } from '@ant-
 const { Text } = Typography
 
 export function Dashboard() {
-    const { data, ethPrice } = useContract()
+    const { data, ethPrice, mcrPercent } = useContract()
+    const distanceToLiquidation = ethPrice > 0 ? ((ethPrice - data.liquidationPrice) / ethPrice) * 100 : 0
 
 
 
@@ -81,7 +82,7 @@ export function Dashboard() {
                             size="small"
                         />
                         <div style={{ textAlign: 'right', marginTop: 4 }}>
-                            <Text type="secondary" style={{ fontSize: 12 }}>最低 110%</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>最低 {mcrPercent.toFixed(0)}%</Text>
                         </div>
                     </Card>
                 </Col>
@@ -99,7 +100,7 @@ export function Dashboard() {
                     <Col style={{ textAlign: 'right' }}>
                         <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>距离清算</Text>
                         <Text strong style={{ fontSize: 20, color: ethPrice > data.liquidationPrice ? '#52c41a' : '#ff4d4f' }}>
-                            {formatNumber(((ethPrice - data.liquidationPrice) / ethPrice) * 100, 2)}%
+                            {formatNumber(distanceToLiquidation, 2)}%
                         </Text>
                     </Col>
                 </Row>
