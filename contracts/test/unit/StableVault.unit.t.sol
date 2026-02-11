@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 
-import { MockERC20 } from "../mocks/MockERC20.sol";
 import { MockAggregatorV3 } from "../mocks/MockAggregatorV3.sol";
 import { STBToken } from "../../src/STBToken.sol";
 import { TwapOracle } from "../../src/TwapOracle.sol";
@@ -15,7 +14,6 @@ contract StableVaultUnitTest is Test {
     address internal alice = address(0xBEEF);
     address internal keeper = address(0xCAFE);
 
-    MockERC20 internal weth;
     MockAggregatorV3 internal feed;
     TwapOracle internal twap;
     OracleHub internal oracleHub;
@@ -23,28 +21,23 @@ contract StableVaultUnitTest is Test {
     StableVault internal vault;
 
     function setUp() public {
-        weth = new MockERC20("Wrapped Ether", "WETH", 18);
         feed = new MockAggregatorV3(8, 2500e8);
         twap = new TwapOracle(owner);
         oracleHub = new OracleHub(owner, address(feed), address(twap));
         stb = new STBToken(owner);
-        vault = new StableVault(owner, address(weth), address(stb), address(oracleHub));
+        vault = new StableVault(owner, address(stb), address(oracleHub));
 
         stb.setVault(address(vault));
         twap.setPublisher(owner, true);
         twap.updateTwap(2500e18);
 
         oracleHub.transferOwnership(address(vault));
-
-        weth.mint(alice, 1000e18);
-        vm.startPrank(alice);
-        weth.approve(address(vault), type(uint256).max);
-        vm.stopPrank();
+        vm.deal(alice, 1000e18);
     }
 
     function testDepositAndMintFlow() public {
         vm.startPrank(alice);
-        vault.deposit(10e18);
+        vault.deposit{ value: 10e18 }(10e18);
         vault.mint(10_000e18);
         vm.stopPrank();
 
@@ -57,7 +50,7 @@ contract StableVaultUnitTest is Test {
 
     function testWithdrawRevertsWhenCRTooLow() public {
         vm.startPrank(alice);
-        vault.deposit(10e18);
+        vault.deposit{ value: 10e18 }(10e18);
         vault.mint(16_000e18);
         vm.expectRevert();
         vault.withdraw(1e18);
@@ -66,7 +59,7 @@ contract StableVaultUnitTest is Test {
 
     function testMintRevertsWhenBreakerTriggered() public {
         vm.startPrank(alice);
-        vault.deposit(10e18);
+        vault.deposit{ value: 10e18 }(10e18);
         vm.stopPrank();
 
         vm.prank(owner);
@@ -79,7 +72,7 @@ contract StableVaultUnitTest is Test {
 
     function testRepayAccruedFeeAndPrincipal() public {
         vm.startPrank(alice);
-        vault.deposit(10e18);
+        vault.deposit{ value: 10e18 }(10e18);
         vault.mint(10_000e18);
         vault.mint(5_000e18);
         vm.stopPrank();
@@ -100,7 +93,7 @@ contract StableVaultUnitTest is Test {
 
     function testPartialLiquidationByKeeper() public {
         vm.startPrank(alice);
-        vault.deposit(10e18);
+        vault.deposit{ value: 10e18 }(10e18);
         vault.mint(15_000e18);
         vm.stopPrank();
 
@@ -125,12 +118,12 @@ contract StableVaultUnitTest is Test {
         (uint256 collateral,,, uint256 debtWithFee,,) = vault.getVault(alice);
         assertLt(collateral, 10e18);
         assertLt(debtWithFee, 15_000e18 + 1);
-        assertGt(weth.balanceOf(keeper), 0);
+        assertGt(keeper.balance, 0);
     }
 
     function testUnderwaterPositionDoesNotCreateBadDebtInPartialLiquidation() public {
         vm.startPrank(alice);
-        vault.deposit(2e18);
+        vault.deposit{ value: 2e18 }(2e18);
         vault.mint(2000e18);
         vault.mint(1000e18);
         vm.stopPrank();
@@ -158,7 +151,7 @@ contract StableVaultUnitTest is Test {
 
     function testCircuitBreakerAllowsDepositAndRepay() public {
         vm.startPrank(alice);
-        vault.deposit(10e18);
+        vault.deposit{ value: 10e18 }(10e18);
         vault.mint(10_000e18);
         vault.mint(5_000e18);
         vm.stopPrank();
@@ -167,7 +160,7 @@ contract StableVaultUnitTest is Test {
         feed.setAnswer(4000e8);
 
         vm.startPrank(alice);
-        vault.deposit(1e18);
+        vault.deposit{ value: 1e18 }(1e18);
         stb.approve(address(vault), type(uint256).max);
         vault.repay(100e18);
         vm.stopPrank();
@@ -175,7 +168,7 @@ contract StableVaultUnitTest is Test {
 
     function testLiquidationFlowAfterRiskAction() public {
         vm.startPrank(alice);
-        vault.deposit(10e18);
+        vault.deposit{ value: 10e18 }(10e18);
         vault.mint(14_000e18);
         vm.stopPrank();
 
@@ -204,7 +197,7 @@ contract StableVaultUnitTest is Test {
         vault.liquidate(alice, 1_000e18);
         vm.stopPrank();
 
-        assertGt(weth.balanceOf(keeper), 0);
+        assertGt(keeper.balance, 0);
     }
 
     function testAdminDemoPriceMode() public {
@@ -220,7 +213,7 @@ contract StableVaultUnitTest is Test {
 
     function testSameBlockLiquidationRevertsThenSucceedsNextBlock() public {
         vm.startPrank(alice);
-        vault.deposit(10e18);
+        vault.deposit{ value: 10e18 }(10e18);
         vault.mint(14_000e18);
         vm.stopPrank();
 
@@ -248,7 +241,7 @@ contract StableVaultUnitTest is Test {
 
     function testBadDebtCoverBurnsReserveTokens() public {
         vm.startPrank(alice);
-        vault.deposit(10e18);
+        vault.deposit{ value: 10e18 }(10e18);
         vault.mint(16_000e18);
         assertTrue(stb.transfer(keeper, 12_000e18));
         vm.stopPrank();

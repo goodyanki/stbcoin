@@ -9,7 +9,6 @@ const REQUIRED = [
   "SMOKE_KEEPER_PRIVATE_KEY",
   "STABLE_VAULT_ADDRESS",
   "ORACLE_HUB_ADDRESS",
-  "WETH_ADDRESS",
   "STB_TOKEN_ADDRESS"
 ] as const;
 
@@ -33,7 +32,6 @@ const erc20Abi = [
   "function balanceOf(address owner) view returns (uint256)"
 ];
 
-const weth = new Contract(process.env.WETH_ADDRESS!, erc20Abi, owner);
 const stb = new Contract(process.env.STB_TOKEN_ADDRESS!, erc20Abi, owner);
 const stbAsKeeper = new Contract(process.env.STB_TOKEN_ADDRESS!, erc20Abi, keeper);
 
@@ -51,20 +49,19 @@ async function main() {
   const ownerAddr = await owner.getAddress();
   const keeperAddr = await keeper.getAddress();
 
-  const depositAmount = parseUnits(process.env.SMOKE_DEPOSIT_WETH ?? "0.2", 18);
+  const depositAmount = parseUnits(process.env.SMOKE_DEPOSIT_ETH ?? "0.2", 18);
   const mintAmount = parseUnits(process.env.SMOKE_MINT_STB ?? "180", 18);
   const liquidateAmount = parseUnits(process.env.SMOKE_LIQUIDATE_STB ?? "50", 18);
   const demoPrice = parseUnits(process.env.SMOKE_DEMO_PRICE ?? "1200", 18);
 
-  const wethBalance = (await weth.balanceOf(ownerAddr)) as bigint;
-  if (wethBalance < depositAmount) {
+  const ethBalance = await provider.getBalance(ownerAddr);
+  if (ethBalance < depositAmount) {
     throw new Error(
-      `Owner WETH insufficient, have=${formatUnits(wethBalance, 18)} need=${formatUnits(depositAmount, 18)}`
+      `Owner ETH insufficient, have=${formatUnits(ethBalance, 18)} need=${formatUnits(depositAmount, 18)}`
     );
   }
 
-  await wait(weth.approve(process.env.STABLE_VAULT_ADDRESS!, depositAmount));
-  await wait(vault.deposit(depositAmount));
+  await wait(vault.deposit(depositAmount, { value: depositAmount }));
   await wait(vault.mint(mintAmount));
 
   const stbBalanceOwner = (await stb.balanceOf(ownerAddr)) as bigint;
@@ -88,7 +85,7 @@ async function main() {
   console.log("=== Sepolia Smoke Result ===");
   console.log(`owner: ${ownerAddr}`);
   console.log(`keeper: ${keeperAddr}`);
-  console.log(`collateralWETH: ${toNum(vaultInfo[0]).toFixed(6)}`);
+  console.log(`collateralETH: ${toNum(vaultInfo[0]).toFixed(6)}`);
   console.log(`debtSTB: ${toNum(vaultInfo[3]).toFixed(6)}`);
   console.log(`collateralRatioBps: ${ratioBps.toString()}`);
   console.log(`badDebtSTB: ${toNum(badDebt).toFixed(6)}`);
@@ -101,4 +98,3 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-

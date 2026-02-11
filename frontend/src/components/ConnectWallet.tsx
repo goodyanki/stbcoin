@@ -1,8 +1,9 @@
 import { useAccount, useConnect, useDisconnect, useBalance, useChainId, useSwitchChain } from 'wagmi'
-import { sepolia } from 'wagmi/chains'
 import { WalletOutlined, LogoutOutlined, DownOutlined, WarningOutlined } from '@ant-design/icons'
 import { Button, Dropdown, Tag, Typography, Space } from 'antd'
 import type { MenuProps } from 'antd'
+
+import { targetChain } from '../wagmi'
 
 const { Text } = Typography
 
@@ -44,15 +45,15 @@ export function ConnectWallet() {
     )
   }
 
-  if (chainId !== sepolia.id) {
+  if (chainId !== targetChain.id) {
     return (
       <Button
         type="primary"
         danger
         icon={<WarningOutlined />}
-        onClick={() => switchChain({ chainId: sepolia.id })}
+        onClick={() => switchChain({ chainId: targetChain.id })}
       >
-        切换至 Sepolia 11155111
+        切换至 {targetChain.name} {targetChain.id}
       </Button>
     )
   }
@@ -69,7 +70,7 @@ export function ConnectWallet() {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-      <Tag color="success">Sepolia</Tag>
+      <Tag color="success">{targetChain.name}</Tag>
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.2 }}>
         <Text style={{ color: '#fff', fontWeight: 500 }}>

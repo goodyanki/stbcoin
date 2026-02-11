@@ -34,10 +34,10 @@ export function ActionPanel() {
 
     const getActionLabel = () => {
         switch (activeTab) {
-            case 'deposit': return 'Deposit WETH'
+            case 'deposit': return 'Deposit ETH'
             case 'mint': return 'Mint STB'
             case 'repay': return 'Repay STB'
-            case 'withdraw': return 'Withdraw WETH'
+            case 'withdraw': return 'Withdraw ETH'
         }
     }
 
@@ -69,7 +69,7 @@ export function ActionPanel() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
             <div>
                 <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
-                    <Text type="secondary">Amount ({activeTab === 'deposit' || activeTab === 'withdraw' ? 'WETH' : 'STB'})</Text>
+                    <Text type="secondary">Amount ({activeTab === 'deposit' || activeTab === 'withdraw' ? 'ETH' : 'STB'})</Text>
                     {activeTab === 'repay' && (
                         <Button type="link" size="small" onClick={() => setAmount(data.debt)} style={{ padding: 0 }}>
                             Max

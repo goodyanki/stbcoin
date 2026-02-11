@@ -14,7 +14,6 @@ contract DeploySepolia is Script {
         address owner = vm.addr(deployerPrivateKey);
 
         address chainlinkEthUsd = vm.envAddress("CHAINLINK_ETH_USD");
-        address weth = vm.envAddress("WETH_ADDRESS");
         address keeper = vm.envOr("KEEPER_ADDRESS", owner);
         address oraclePublisher = vm.envOr("ORACLE_PUBLISHER", keeper);
         bool enableDemoMode = vm.envOr("ENABLE_DEMO_MODE", false);
@@ -25,7 +24,7 @@ contract DeploySepolia is Script {
         STBToken stb = new STBToken(owner);
         TwapOracle twap = new TwapOracle(owner);
         OracleHub oracleHub = new OracleHub(owner, chainlinkEthUsd, address(twap));
-        StableVault vault = new StableVault(owner, weth, address(stb), address(oracleHub));
+        StableVault vault = new StableVault(owner, address(stb), address(oracleHub));
 
         stb.setVault(address(vault));
         twap.setPublisher(owner, true);

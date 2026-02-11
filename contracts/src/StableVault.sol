@@ -2,8 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { Ownable } from "./utils/Ownable.sol";
-import { IERC20 } from "./interfaces/IERC20.sol";
-import { IWETH9 } from "./interfaces/IWETH9.sol";
 import { ISTBToken } from "./interfaces/ISTBToken.sol";
 import { IOracleHub } from "./interfaces/IOracleHub.sol";
 
@@ -20,7 +18,6 @@ contract StableVault is Ownable {
     uint256 private constant WAD = 1e18;
     uint256 private constant YEAR = 365 days;
 
-    IWETH9 public immutable weth;
     ISTBToken public immutable stb;
     IOracleHub public immutable oracleHub;
 
@@ -45,9 +42,10 @@ contract StableVault is Ownable {
     error HealthyVault();
     error SameBlockRiskAction();
     error InvalidParams();
+    error EthTransferFailed();
 
-    event Deposited(address indexed owner, uint256 wethAmount);
-    event Withdrawn(address indexed owner, uint256 wethAmount);
+    event Deposited(address indexed owner, uint256 ethAmount);
+    event Withdrawn(address indexed owner, uint256 ethAmount);
     event Minted(address indexed owner, uint256 stbAmount);
     event Repaid(address indexed owner, uint256 stbAmount, uint256 feePaid, uint256 principalPaid);
     event Liquidated(
@@ -76,42 +74,35 @@ contract StableVault is Ownable {
         _;
     }
 
-    constructor(address initialOwner, address wethToken, address stbToken, address oracle)
-        Ownable(initialOwner)
-    {
-        weth = IWETH9(wethToken);
+    constructor(address initialOwner, address stbToken, address oracle) Ownable(initialOwner) {
         stb = ISTBToken(stbToken);
         oracleHub = IOracleHub(oracle);
     }
 
-    function deposit(uint256 wethAmount) external whenNotPaused {
-        if (wethAmount == 0) revert InvalidAmount();
+    function deposit(uint256 ethAmount) external payable whenNotPaused {
+        if (ethAmount == 0 || msg.value != ethAmount) revert InvalidAmount();
         Vault storage vault = vaults[msg.sender];
         _accrue(vault);
-        vault.collateralAmount += wethAmount;
+        vault.collateralAmount += ethAmount;
 
-        require(
-            IERC20(address(weth)).transferFrom(msg.sender, address(this), wethAmount),
-            "WETH_TRANSFER"
-        );
-
-        emit Deposited(msg.sender, wethAmount);
+        emit Deposited(msg.sender, ethAmount);
     }
 
-    function withdraw(uint256 wethAmount) external whenNotPaused {
+    function withdraw(uint256 ethAmount) external whenNotPaused {
         if (!oracleHub.canRiskActionProceed()) revert OracleBreaker();
-        if (wethAmount == 0) revert InvalidAmount();
+        if (ethAmount == 0) revert InvalidAmount();
         Vault storage vault = vaults[msg.sender];
         _accrue(vault);
-        if (vault.collateralAmount < wethAmount) revert InsufficientCollateral();
+        if (vault.collateralAmount < ethAmount) revert InsufficientCollateral();
 
-        vault.collateralAmount -= wethAmount;
+        vault.collateralAmount -= ethAmount;
         _requireHealthy(vault);
         vault.lastRiskActionBlock = block.number;
 
-        require(IERC20(address(weth)).transfer(msg.sender, wethAmount), "WETH_TRANSFER");
+        (bool ok,) = payable(msg.sender).call{ value: ethAmount }("");
+        if (!ok) revert EthTransferFailed();
 
-        emit Withdrawn(msg.sender, wethAmount);
+        emit Withdrawn(msg.sender, ethAmount);
     }
 
     function mint(uint256 stbAmount) external whenNotPaused {
@@ -207,7 +198,8 @@ contract StableVault is Ownable {
             }
         }
 
-        require(IERC20(address(weth)).transfer(msg.sender, seizeCollateral), "WETH_TRANSFER");
+        (bool ok,) = payable(msg.sender).call{ value: seizeCollateral }("");
+        if (!ok) revert EthTransferFailed();
 
         emit Liquidated(ownerAddress, msg.sender, finalRepay, seizeCollateral, badDebtDelta);
     }
@@ -441,4 +433,6 @@ contract StableVault is Ownable {
     {
         oracleHub.setConfig(spotMaxAge, twapMaxAge, maxDeviationBps);
     }
+
+    receive() external payable { }
 }

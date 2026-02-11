@@ -43,7 +43,7 @@ export function Dashboard() {
                             title="Collateral"
                             value={data.collateral}
                             precision={4}
-                            suffix="WETH"
+                            suffix="ETH"
                         />
                         <Text type="secondary" style={{ fontSize: 12 }}>
                             ≈ {formatCurrency(data.collateral * ethPrice)}
@@ -127,4 +127,3 @@ export function Dashboard() {
         </div>
     )
 }
-

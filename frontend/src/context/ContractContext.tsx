@@ -63,7 +63,7 @@ export function ContractProvider({ children }: { children: ReactNode }) {
     const [backendHealthy, setBackendHealthy] = useState(false)
 
     const contractsReady = useMemo(
-        () => Boolean(CONTRACTS.stableVault && CONTRACTS.oracleHub && CONTRACTS.stbToken && CONTRACTS.weth),
+        () => Boolean(CONTRACTS.stableVault && CONTRACTS.oracleHub && CONTRACTS.stbToken),
         []
     )
     const mcrPercent = 150
@@ -178,9 +178,6 @@ export function ContractProvider({ children }: { children: ReactNode }) {
 
         const parsed = parseUnits(String(amount), 18)
 
-        if ((type === 'deposit' || type === 'withdraw') && CONTRACTS.weth) {
-            await ensureApproval(CONTRACTS.weth, parsed)
-        }
         if ((type === 'repay' || type === 'liquidate') && CONTRACTS.stbToken) {
             await ensureApproval(CONTRACTS.stbToken, parsed)
         }
@@ -191,6 +188,7 @@ export function ContractProvider({ children }: { children: ReactNode }) {
                 abi: STABLE_VAULT_ABI,
                 functionName: 'deposit',
                 args: [parsed],
+                value: parsed,
                 account: address,
                 chain: walletClient.chain,
             })
@@ -320,4 +318,3 @@ export const useContract = () => {
     if (!context) throw new Error('useContract must be used within a ContractProvider')
     return context
 }
-

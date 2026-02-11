@@ -2,7 +2,6 @@ export const CONTRACTS = {
   stableVault: import.meta.env.VITE_STABLE_VAULT_ADDRESS as `0x${string}` | undefined,
   oracleHub: import.meta.env.VITE_ORACLE_HUB_ADDRESS as `0x${string}` | undefined,
   stbToken: import.meta.env.VITE_STB_TOKEN_ADDRESS as `0x${string}` | undefined,
-  weth: import.meta.env.VITE_WETH_ADDRESS as `0x${string}` | undefined,
   backendBaseUrl: (import.meta.env.VITE_BACKEND_URL as string | undefined) ?? "http://localhost:8080"
 }
 
@@ -10,15 +9,15 @@ export const STABLE_VAULT_ABI = [
   {
     type: 'function',
     name: 'deposit',
-    stateMutability: 'nonpayable',
-    inputs: [{ name: 'wethAmount', type: 'uint256' }],
+    stateMutability: 'payable',
+    inputs: [{ name: 'ethAmount', type: 'uint256' }],
     outputs: []
   },
   {
     type: 'function',
     name: 'withdraw',
     stateMutability: 'nonpayable',
-    inputs: [{ name: 'wethAmount', type: 'uint256' }],
+    inputs: [{ name: 'ethAmount', type: 'uint256' }],
     outputs: []
   },
   {
@@ -126,4 +125,3 @@ export const ORACLE_HUB_ABI = [
     ]
   }
 ] as const
-
