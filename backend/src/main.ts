@@ -5,16 +5,28 @@ import { prisma } from "./lib/prisma.js";
 import { runTwapTick, startTwapWorker } from "./oracle/twapWorker.js";
 import { startServer } from "./api/server.js";
 
+async function safeStep(step: string, action: () => Promise<void> | void): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    logger.error({ error, step }, "bootstrap step failed");
+  }
+}
+
 async function bootstrap() {
-  await backfillLiquidations();
-  subscribeLiquidations();
-
-  await runTwapTick();
-
-  startTwapWorker();
-  startKeeperWorker();
-
   await startServer();
+
+  await safeStep("indexer backfill", backfillLiquidations);
+  await safeStep("indexer subscribe", () => {
+    subscribeLiquidations();
+  });
+  await safeStep("initial twap tick", runTwapTick);
+  await safeStep("start twap worker", () => {
+    startTwapWorker();
+  });
+  await safeStep("start keeper worker", () => {
+    startKeeperWorker();
+  });
 }
 
 bootstrap().catch(async (error) => {
@@ -22,4 +34,3 @@ bootstrap().catch(async (error) => {
   await prisma.$disconnect();
   process.exit(1);
 });
-

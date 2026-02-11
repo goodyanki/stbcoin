@@ -66,11 +66,14 @@ export async function runTwapTick(): Promise<void> {
 
 export function startTwapWorker(): NodeJS.Timeout {
   return setInterval(() => {
-    void runTwapTick();
+    void runTwapTick().catch((error) => {
+      logger.error({ error }, "twap tick failed");
+    });
   }, env.oracleIntervalMs);
 }
 
 export function parseKeeperMaxRepay(): bigint {
   return parseUnits(env.keeperMaxRepayStb, 18);
 }
+
 

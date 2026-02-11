@@ -211,7 +211,10 @@ export function getKeeperStatus() {
 export function startKeeperWorker(): NodeJS.Timeout {
   keeperState.active = true;
   return setInterval(() => {
-    void runKeeperTick();
+    void runKeeperTick().catch((error) => {
+      logger.error({ error }, "keeper tick failed");
+    });
   }, env.keeperIntervalMs);
 }
+
 
