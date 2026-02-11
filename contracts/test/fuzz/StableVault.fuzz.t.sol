@@ -60,7 +60,7 @@ contract StableVaultFuzzTest is Test {
 
         vm.warp(block.timestamp + 60 days);
 
-        (, , , uint256 debtBefore,,) = vault.getVault(alice);
+        (,,, uint256 debtBefore,,) = vault.getVault(alice);
         uint256 available = stb.balanceOf(alice);
         uint256 upper = available < debtBefore ? available : debtBefore;
         uint256 repayAmount = bound(uint256(repayIn), 1e18, upper);
@@ -70,7 +70,7 @@ contract StableVaultFuzzTest is Test {
         vault.repay(repayAmount);
         vm.stopPrank();
 
-        (, , , uint256 debtAfter,,) = vault.getVault(alice);
+        (,,, uint256 debtAfter,,) = vault.getVault(alice);
         assertLe(debtAfter, debtBefore);
     }
 }
