@@ -2,10 +2,11 @@
 pragma solidity ^0.8.24;
 
 import { Ownable } from "./utils/Ownable.sol";
+import { ReentrancyGuard } from "./utils/ReentrancyGuard.sol";
 import { ISTBToken } from "./interfaces/ISTBToken.sol";
 import { IOracleHub } from "./interfaces/IOracleHub.sol";
 
-contract StableVault is Ownable {
+contract StableVault is Ownable, ReentrancyGuard {
     struct Vault {
         uint256 collateralAmount;
         uint256 debtPrincipal;
@@ -79,7 +80,10 @@ contract StableVault is Ownable {
         oracleHub = IOracleHub(oracle);
     }
 
-    function deposit(uint256 ethAmount) external payable whenNotPaused {
+    /// @notice Deposits ETH collateral into caller's vault.
+    /// @dev `msg.value` must equal `ethAmount`.
+    /// @param ethAmount Amount of ETH collateral to deposit (wei).
+    function deposit(uint256 ethAmount) external payable whenNotPaused nonReentrant {
         if (ethAmount == 0 || msg.value != ethAmount) revert InvalidAmount();
         Vault storage vault = vaults[msg.sender];
         _accrue(vault);
@@ -88,7 +92,10 @@ contract StableVault is Ownable {
         emit Deposited(msg.sender, ethAmount);
     }
 
-    function withdraw(uint256 ethAmount) external whenNotPaused {
+    /// @notice Withdraws ETH collateral from caller's vault.
+    /// @dev Reverts if oracle breaker is on or vault would become undercollateralized.
+    /// @param ethAmount Amount of ETH to withdraw (wei).
+    function withdraw(uint256 ethAmount) external whenNotPaused nonReentrant {
         if (!oracleHub.canRiskActionProceed()) revert OracleBreaker();
         if (ethAmount == 0) revert InvalidAmount();
         Vault storage vault = vaults[msg.sender];
@@ -105,7 +112,10 @@ contract StableVault is Ownable {
         emit Withdrawn(msg.sender, ethAmount);
     }
 
-    function mint(uint256 stbAmount) external whenNotPaused {
+    /// @notice Mints STB against caller's collateral.
+    /// @dev Reverts if oracle breaker is on or collateral ratio falls below minimum.
+    /// @param stbAmount Amount of STB to mint (18 decimals).
+    function mint(uint256 stbAmount) external whenNotPaused nonReentrant {
         if (!oracleHub.canRiskActionProceed()) revert OracleBreaker();
         if (stbAmount == 0) revert InvalidAmount();
         Vault storage vault = vaults[msg.sender];
@@ -120,7 +130,9 @@ contract StableVault is Ownable {
         emit Minted(msg.sender, stbAmount);
     }
 
-    function repay(uint256 stbAmount) external whenNotPaused {
+    /// @notice Repays caller's STB debt, covering fee first then principal.
+    /// @param stbAmount Requested repayment amount (18 decimals).
+    function repay(uint256 stbAmount) external whenNotPaused nonReentrant {
         if (stbAmount == 0) revert InvalidAmount();
         Vault storage vault = vaults[msg.sender];
         _accrue(vault);
@@ -130,10 +142,10 @@ contract StableVault is Ownable {
 
         uint256 payAmount = stbAmount > debt ? debt : stbAmount;
 
-        require(stb.transferFrom(msg.sender, address(this), payAmount), "STB_TRANSFER");
-
         (uint256 feePaid, uint256 principalPaid) = _applyDebtPayment(vault, payAmount);
         protocolReserveStb += feePaid;
+
+        require(stb.transferFrom(msg.sender, address(this), payAmount), "STB_TRANSFER");
 
         if (principalPaid > 0) {
             stb.burn(address(this), principalPaid);
@@ -142,7 +154,15 @@ contract StableVault is Ownable {
         emit Repaid(msg.sender, payAmount, feePaid, principalPaid);
     }
 
-    function liquidate(address ownerAddress, uint256 repayAmount) external whenNotPaused {
+    /// @notice Liquidates an unhealthy vault by repaying debt and seizing collateral.
+    /// @dev Callable by keeper or vault owner while breaker is off.
+    /// @param ownerAddress Vault owner to liquidate.
+    /// @param repayAmount Requested STB repay amount by liquidator.
+    function liquidate(address ownerAddress, uint256 repayAmount)
+        external
+        whenNotPaused
+        nonReentrant
+    {
         if (!oracleHub.canRiskActionProceed()) revert OracleBreaker();
         if (repayAmount == 0) revert InvalidAmount();
 
@@ -171,14 +191,8 @@ contract StableVault is Ownable {
         if (finalRepay > maxRepayByCollateral) finalRepay = maxRepayByCollateral;
         if (finalRepay == 0) revert InvalidAmount();
 
-        require(stb.transferFrom(msg.sender, address(this), finalRepay), "STB_TRANSFER");
-
         (uint256 feePaid, uint256 principalPaid) = _applyDebtPayment(vault, finalRepay);
         protocolReserveStb += feePaid;
-
-        if (principalPaid > 0) {
-            stb.burn(address(this), principalPaid);
-        }
 
         uint256 seizeCollateral =
             (finalRepay * (BPS + liquidationBonusBps) * WAD) / (priceE18 * BPS);
@@ -198,13 +212,21 @@ contract StableVault is Ownable {
             }
         }
 
+        require(stb.transferFrom(msg.sender, address(this), finalRepay), "STB_TRANSFER");
+        if (principalPaid > 0) {
+            stb.burn(address(this), principalPaid);
+        }
+
         (bool ok,) = payable(msg.sender).call{ value: seizeCollateral }("");
         if (!ok) revert EthTransferFailed();
 
         emit Liquidated(ownerAddress, msg.sender, finalRepay, seizeCollateral, badDebtDelta);
     }
 
-    function coverBadDebt(uint256 amount) external onlyOwner {
+    /// @notice Burns protocol reserve STB to reduce recorded system bad debt.
+    /// @dev Callable only by owner. Actual covered amount is capped by reserve and bad debt.
+    /// @param amount Requested bad debt cover amount (18 decimals).
+    function coverBadDebt(uint256 amount) external onlyOwner nonReentrant {
         if (amount == 0) revert InvalidAmount();
         if (amount > protocolReserveStb) amount = protocolReserveStb;
         if (amount > systemBadDebt) amount = systemBadDebt;
@@ -220,6 +242,12 @@ contract StableVault is Ownable {
         emit BadDebtCovered(amount);
     }
 
+    /// @notice Updates core liquidation and collateral ratio parameters.
+    /// @dev Callable only by owner. Inputs are validated for safe bounds.
+    /// @param newMinCollateralRatioBps Minimum collateral ratio in bps.
+    /// @param newTargetCollateralRatioBps Target ratio after liquidation in bps.
+    /// @param newLiquidationBonusBps Liquidator bonus in bps.
+    /// @param newMaxCloseFactorBps Max repay share per liquidation in bps.
     function setRiskParams(
         uint256 newMinCollateralRatioBps,
         uint256 newTargetCollateralRatioBps,
@@ -245,33 +273,54 @@ contract StableVault is Ownable {
         );
     }
 
+    /// @notice Sets annualized stability fee rate.
+    /// @dev Callable only by owner.
+    /// @param newStabilityFeeBps Stability fee in bps per year.
     function setStabilityFeeBps(uint256 newStabilityFeeBps) external onlyOwner {
         if (newStabilityFeeBps > 2_000) revert InvalidParams();
         stabilityFeeBps = newStabilityFeeBps;
         emit StabilityFeeUpdated(newStabilityFeeBps);
     }
 
+    /// @notice Pauses or unpauses user mutation actions.
+    /// @dev Callable only by owner.
+    /// @param isPaused True to pause, false to unpause.
     function setPause(bool isPaused) external onlyOwner {
         paused = isPaused;
         emit PauseSet(isPaused);
     }
 
+    /// @notice Grants or revokes keeper permission.
+    /// @dev Callable only by owner.
+    /// @param keeperAddress Keeper address to update.
+    /// @param allowed True to grant keeper role, false to revoke.
     function setKeeper(address keeperAddress, bool allowed) external onlyOwner {
         isKeeper[keeperAddress] = allowed;
         emit KeeperSet(keeperAddress, allowed);
     }
 
+    /// @notice Enables or disables oracle demo mode via OracleHub.
+    /// @dev Callable only by owner.
+    /// @param enabled True to enable demo mode.
     function setDemoMode(bool enabled) external onlyOwner {
         _oracleAdminSetDemoMode(enabled);
         emit DemoModeSet(enabled);
     }
 
+    /// @notice Sets manual demo ETH price via OracleHub.
+    /// @dev Callable only by owner. Price must be within basic sanity bounds.
+    /// @param priceE18 ETH/USD price in 1e18 precision.
     function setDemoPrice(uint256 priceE18) external onlyOwner {
         if (priceE18 == 0 || priceE18 > 1e24) revert InvalidParams();
         _oracleAdminSetDemoPrice(priceE18);
         emit DemoPriceSet(priceE18);
     }
 
+    /// @notice Updates OracleHub breaker config.
+    /// @dev Callable only by owner.
+    /// @param spotMaxAge Maximum accepted spot age in seconds.
+    /// @param twapMaxAge Maximum accepted TWAP age in seconds.
+    /// @param maxDeviationBps Maximum spot/TWAP deviation in bps.
     function setOracleConfig(uint256 spotMaxAge, uint256 twapMaxAge, uint256 maxDeviationBps)
         external
         onlyOwner
@@ -280,6 +329,14 @@ contract StableVault is Ownable {
         emit OracleConfigSet(spotMaxAge, twapMaxAge, maxDeviationBps);
     }
 
+    /// @notice Returns full vault snapshot for a user.
+    /// @param ownerAddress Vault owner address.
+    /// @return collateralAmount ETH collateral in wei.
+    /// @return debtPrincipal Outstanding principal debt.
+    /// @return accruedFee Accrued stability fee amount.
+    /// @return debtWithFee Principal plus pending fee accrual.
+    /// @return lastAccruedTimestamp Last fee accrual timestamp.
+    /// @return lastRiskActionBlock Last block where risk action occurred.
     function getVault(address ownerAddress)
         external
         view
@@ -303,14 +360,22 @@ contract StableVault is Ownable {
         );
     }
 
+    /// @notice Returns current collateral ratio for a vault.
+    /// @param ownerAddress Vault owner address.
+    /// @return Collateral ratio in bps.
     function getCollateralRatioBps(address ownerAddress) external view returns (uint256) {
         return _collateralRatioBps(vaults[ownerAddress]);
     }
 
+    /// @notice Returns whether a vault is currently liquidatable.
+    /// @param ownerAddress Vault owner address.
+    /// @return True if vault is below minimum collateral ratio.
     function isLiquidatable(address ownerAddress) external view returns (bool) {
         return _isLiquidatable(vaults[ownerAddress]);
     }
 
+    /// @notice Returns total recorded protocol bad debt.
+    /// @return Total bad debt amount in STB units (18 decimals).
     function getSystemBadDebt() external view returns (uint256) {
         return systemBadDebt;
     }

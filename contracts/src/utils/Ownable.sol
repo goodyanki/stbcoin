@@ -20,6 +20,9 @@ abstract contract Ownable {
         emit OwnershipTransferred(address(0), initialOwner);
     }
 
+    /// @notice Transfers contract ownership to a new account.
+    /// @dev Reverts if caller is not current owner or `newOwner` is zero address.
+    /// @param newOwner Address that will become the new owner.
     function transferOwnership(address newOwner) external onlyOwner {
         if (newOwner == address(0)) revert OwnableInvalidOwner(address(0));
         address previousOwner = owner;
@@ -27,4 +30,3 @@ abstract contract Ownable {
         emit OwnershipTransferred(previousOwner, newOwner);
     }
 }
-

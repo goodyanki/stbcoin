@@ -22,11 +22,18 @@ contract TwapOracle is Ownable {
 
     constructor(address initialOwner) Ownable(initialOwner) { }
 
+    /// @notice Grants or revokes TWAP publish permission.
+    /// @dev Callable only by owner.
+    /// @param publisher Address to update.
+    /// @param allowed True to allow publishing, false to revoke.
     function setPublisher(address publisher, bool allowed) external onlyOwner {
         isPublisher[publisher] = allowed;
         emit PublisherSet(publisher, allowed);
     }
 
+    /// @notice Updates stored TWAP ETH price.
+    /// @dev Callable by owner or approved publisher. Price is 1e18-scaled USD value.
+    /// @param priceE18 New TWAP price in 1e18 precision.
     function updateTwap(uint256 priceE18) external onlyPublisher {
         if (priceE18 == 0) revert InvalidPrice();
         twapPriceE18 = priceE18;
@@ -34,8 +41,10 @@ contract TwapOracle is Ownable {
         emit TwapUpdated(priceE18, block.timestamp);
     }
 
+    /// @notice Returns the latest TWAP price and timestamp.
+    /// @return priceE18 TWAP ETH/USD price in 1e18 precision.
+    /// @return timestamp Block timestamp when TWAP was last updated.
     function getTwap() external view returns (uint256 priceE18, uint256 timestamp) {
         return (twapPriceE18, updatedAt);
     }
 }
-

@@ -27,23 +27,40 @@ contract STBToken is IERC20, Ownable {
 
     constructor(address initialOwner) Ownable(initialOwner) { }
 
+    /// @notice Sets the authorized vault contract that can mint/burn STB.
+    /// @dev Callable only by owner. Reverts on zero address.
+    /// @param vaultAddress Address of StableVault contract.
     function setVault(address vaultAddress) external onlyOwner {
         if (vaultAddress == address(0)) revert ZeroAddress();
         vault = vaultAddress;
         emit VaultSet(vaultAddress);
     }
 
+    /// @notice Transfers STB from caller to recipient.
+    /// @param to Recipient address.
+    /// @param amount Amount of STB to transfer.
+    /// @return True when transfer succeeds.
     function transfer(address to, uint256 amount) external override returns (bool) {
         _transfer(msg.sender, to, amount);
         return true;
     }
 
+    /// @notice Approves a spender to spend caller's STB.
+    /// @param spender Address allowed to spend tokens.
+    /// @param amount Allowance amount.
+    /// @return True when approval succeeds.
     function approve(address spender, uint256 amount) external override returns (bool) {
         allowance[msg.sender][spender] = amount;
         emit Approval(msg.sender, spender, amount);
         return true;
     }
 
+    /// @notice Transfers tokens using an existing allowance.
+    /// @dev Decreases allowance unless it is set to max uint256.
+    /// @param from Token owner address.
+    /// @param to Recipient address.
+    /// @param amount Amount to transfer.
+    /// @return True when transfer succeeds.
     function transferFrom(address from, address to, uint256 amount)
         external
         override
@@ -60,6 +77,10 @@ contract STBToken is IERC20, Ownable {
         return true;
     }
 
+    /// @notice Mints STB to a recipient.
+    /// @dev Callable only by configured vault.
+    /// @param to Recipient address.
+    /// @param amount Amount to mint.
     function mint(address to, uint256 amount) external onlyVault {
         if (to == address(0)) revert ZeroAddress();
         totalSupply += amount;
@@ -67,6 +88,10 @@ contract STBToken is IERC20, Ownable {
         emit Transfer(address(0), to, amount);
     }
 
+    /// @notice Burns STB from an account.
+    /// @dev Callable only by configured vault.
+    /// @param from Address whose tokens are burned.
+    /// @param amount Amount to burn.
     function burn(address from, uint256 amount) external onlyVault {
         uint256 fromBalance = balanceOf[from];
         require(fromBalance >= amount, "BALANCE");
@@ -84,4 +109,3 @@ contract STBToken is IERC20, Ownable {
         emit Transfer(from, to, amount);
     }
 }
-

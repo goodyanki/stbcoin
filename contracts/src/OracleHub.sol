@@ -28,6 +28,11 @@ contract OracleHub is Ownable {
         twapOracle = TwapOracle(twapOracleAddress);
     }
 
+    /// @notice Updates oracle breaker configuration thresholds.
+    /// @dev Callable only by owner.
+    /// @param newSpotMaxAge Maximum age for spot price in seconds.
+    /// @param newTwapMaxAge Maximum age for TWAP price in seconds.
+    /// @param newMaxDeviationBps Maximum allowed spot/TWAP deviation in bps.
     function setConfig(uint256 newSpotMaxAge, uint256 newTwapMaxAge, uint256 newMaxDeviationBps)
         external
         onlyOwner
@@ -38,11 +43,17 @@ contract OracleHub is Ownable {
         emit OracleConfigUpdated(newSpotMaxAge, newTwapMaxAge, newMaxDeviationBps);
     }
 
+    /// @notice Enables or disables demo pricing mode.
+    /// @dev Callable only by owner.
+    /// @param enabled True to use demo price, false to use real oracles.
     function setDemoMode(bool enabled) external onlyOwner {
         demoMode = enabled;
         emit DemoModeSet(enabled);
     }
 
+    /// @notice Sets manual demo ETH price used when demo mode is enabled.
+    /// @dev Reverts if demo mode is disabled or price is zero.
+    /// @param priceE18 Demo ETH/USD price in 1e18 precision.
     function setDemoPrice(uint256 priceE18) external onlyOwner {
         if (!demoMode) revert InvalidPrice();
         if (priceE18 == 0) revert InvalidPrice();
@@ -50,17 +61,30 @@ contract OracleHub is Ownable {
         emit DemoPriceSet(priceE18);
     }
 
+    /// @notice Returns validated effective ETH price.
+    /// @dev Reverts when breaker is triggered.
+    /// @return Effective ETH/USD price in 1e18 precision.
     function getValidatedPrice() external view returns (uint256) {
         (uint256 effectivePrice,,,,, bool breakerTriggered) = getPriceStatus();
         if (breakerTriggered) revert InvalidPrice();
         return effectivePrice;
     }
 
+    /// @notice Indicates whether risky actions are currently allowed.
+    /// @return True if breaker is not triggered, false otherwise.
     function canRiskActionProceed() external view returns (bool) {
         (,,,,, bool breakerTriggered) = getPriceStatus();
         return !breakerTriggered;
     }
 
+    /// @notice Returns current oracle status used by risk checks.
+    /// @dev If demo mode is active, all returned prices are the demo price.
+    /// @return effectivePrice Effective ETH/USD price used by protocol logic.
+    /// @return spotPrice Spot price from Chainlink feed (1e18).
+    /// @return twapPrice TWAP price from TwapOracle (1e18).
+    /// @return spotUpdatedAt Spot price timestamp.
+    /// @return twapUpdatedAt TWAP price timestamp.
+    /// @return breakerTriggered True when stale/deviated data triggers breaker.
     function getPriceStatus()
         public
         view
