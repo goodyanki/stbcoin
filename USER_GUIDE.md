@@ -1,29 +1,17 @@
-# StableVault 用户指南
+# StableVault userguide
 
-## 📌 目录
 
-1. [项目简介](#项目简介)
-2. [系统要求](#系统要求)
-3. [快速开始](#快速开始)
-4. [功能说明](#功能说明)
-5. [操作指南](#操作指南)
-6. [常见问题](#常见问题)
-7. [架构概览](#架构概览)
+Project Overview
+StableVault is an over-collateralized stablecoin protocol MVP deployed on the Sepolia testnet.
 
----
+#core features
 
-## 项目简介
-
-**StableVault** 是一个部署在 Sepolia 测试网上的**过度抵押型稳定币协议 MVP**。
-
-### 核心特性
-
-- ✅ **WETH 抵押机制** - 用户存入 WETH 作为抵押品
-- ✅ **STB 稳定币铸造** - 根据抵押率铸造等额的 STB 稳定币
-- ✅ **自动化清算** - 当抵押不足时，Keeper 自动执行清算
-- ✅ **双重预言机** - Chainlink 现货价格 + TWAP 价格验证
-- ✅ **REST API** - 实时查询协议数据
-- ✅ **Web UI** - 友好的交互界面
+- ✅ WETH Collateral Mechanism - Users deposit WETH as collateral
+✅ STB Stablecoin Minting - Mint STB stablecoins equivalent to the collateral ratio
+✅ Automated Liquidation - Keepers automatically execute liquidations when collateral is insufficient
+✅ Dual Oracle System - Chainlink spot price + TWAP price verification
+✅ REST API - Real-time protocol data query
+✅ Web UI - User-friendly interactive interface
 
 ---
 
@@ -283,166 +271,5 @@ $$\text{抵押率} = \frac{\text{抵押 WETH 价值（美元）}}{\text{STB 债�
 
 ---
 
-## 常见问题
 
-### Q1: 稳定费是什么？为什么要支付？
 
-**A**: 稳定费是协议的运营成本，年化 4%。每次还款时，您会支付：
-```
-稳定费 = 债务金额 × 4% × (天数 / 365)
-```
-
-例：欠 10,000 STB，30 天后还款：
-```
-稳定费 = 10,000 × 0.04 × (30/365) ≈ 32.88 STB
-```
-
-### Q2: 最高能铸造多少 STB？
-
-**A**: 受最小抵押率限制：
-```
-最大铸造 = 抵押 WETH 价值（美元） × (100% / 150%)
-```
-
-例：存 10 WETH（价值 $20,000）：
-```
-最多铸造 = $20,000 / 1.5 = 13,333 STB
-```
-
-### Q3: 清液人如何获利？
-
-**A**: 清液人获得清液奖励（8%）：
-```
-清液奖励 = 偿还的债务 × 8%（以抵押物形式）
-```
-
-例：清液人偿还 5,000 STB 债务：
-```
-获得的 WETH = 5,000 × $1 / $2000 × 1.08 ≈ 2.7 WETH
-```
-
-### Q4: 预言机断路器如何工作？
-
-**A**: 当现货价格与 TWAP 偏差 > 20% 时：
-- ❌ 禁止新的风险操作（存、取、铸、还）
-- ✅ 保留清液功能（防止坏账）
-- ⏳ 待价格恢复正常后自动恢复
-
-### Q5: 我想成为 Keeper（清液机器人）需要什么？
-
-**A**: 
-1. 部署时指定为 `KEEPER_ADDRESS`
-2. 拥有足够的 STB 进行清液
-3. 后端会自动：
-   - 扫描危险 Vault
-   - 执行清液交易
-   - 收集清液奖励
-
----
-
-## 架构概览
-
-### 系统三层架构
-
-```
-┌─────────────────────────────────────────┐
-│        前端应用 (React + Vite)           │
-│   - 钱包连接 (Wagmi)                     │
-│   - 实时数据展示                        │
-│   - 用户交互界面                        │
-└────────────────┬────────────────────────┘
-                 │ REST API
-┌────────────────▼────────────────────────┐
-│    后端服务 (Node + Express)             │
-│  ┌──────────────────────────────────┐  │
-│  │ 4 个 Worker 模块：                │  │
-│  │ • Indexer  - 事件索引和状态跟踪  │  │
-│  │ • Keeper   - 自动清液机器人      │  │
-│  │ • TWAP     - 价格计算和更新      │  │
-│  │ • Server   - REST API 服务       │  │
-│  └──────────────────────────────────┘  │
-│  数据库: SQLite + Prisma                │
-└────────────────┬────────────────────────┘
-                 │ Web3 RPC
-┌────────────────▼────────────────────────┐
-│    智能合约 (Solidity on Sepolia)       │
-│  ┌──────────────────────────────────┐  │
-│  │ • StableVault    - 核心金库合约  │  │
-│  │ • STBToken       - 稳定币 ERC20  │  │
-│  │ • OracleHub      - 预言机中心    │  │
-│  │ • TwapOracle     - TWAP 价格更新 │  │
-│  └──────────────────────────────────┘  │
-└─────────────────────────────────────────┘
-```
-
-### 数据流向
-
-```
-链上事件 → Indexer 监听 → 解析事件 → 更新数据库 → API 查询 → 前端显示
-          ↓
-        Keeper 扫描危险 Vault → 执行清液 → 发出交易 → 链上执行 → 状态更新
-
-Chainlink 价格 → TWAP Worker 采样 → 计算平均价格 → 更新 TwapOracle → 
-  OracleHub 验证 → API 返回价格状态 → 前端显示
-```
-
----
-
-## 🚀 高级配置
-
-### 调整 Keeper 参数
-
-编辑 `backend/.env`：
-
-```env
-# Keeper 最大重试次数（默认 2）
-KEEPER_MAX_ATTEMPTS=3
-
-# 重试退避时间（毫秒，默认 500）
-KEEPER_BACKOFF_MS=1000
-
-# 每次扫描最多处理 Vault 数（默认 100）
-KEEPER_BATCH_SIZE=50
-```
-
-### 调整 TWAP 参数
-
-编辑 `backend/.env`：
-
-```env
-# TWAP 时间窗口（秒，默认 3600 = 1 小时）
-TWAP_WINDOW_SECONDS=7200
-
-# 样本限制（默认 100）
-TWAP_SAMPLE_LIMIT=200
-```
-
----
-
-## 📞 技术支持
-
-### 常见错误排查
-
-| 错误 | 原因 | 解决方案 |
-|------|------|--------|
-| `RPC connection failed` | RPC 地址错误 | 检查 `.env` 中的 RPC_URL |
-| `Contract not deployed` | 地址错误 | 重新部署并更新 `.env` |
-| `Insufficient balance` | gas 不足 | 充值 Sepolia ETH |
-| `Oracle breaker triggered` | 价格异常 | 等待价格恢复 |
-
-### 获取帮助
-
-- 📖 查看合约代码：`contracts/src/`
-- 🔍 查看后端逻辑：`backend/src/`
-- 🎨 查看前端代码：`frontend/src/`
-- 📝 查看日志：后端控制台输出
-
----
-
-## 📄 许可证
-
-MIT License
-
----
-
-**最后更新**：2026 年 2 月 11 日
