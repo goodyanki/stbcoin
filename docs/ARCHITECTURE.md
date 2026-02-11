@@ -1,41 +1,72 @@
-# Architecture Documentation: System Design and Component Interaction
+# StableVault Architecture (Stablecoin-Centric)
 
-## System Overview
+## 1. Design Focus
+The architecture is centered on the on-chain stablecoin system:
+- `StableVault` is the core risk engine.
+- `STBToken` is the mint/burn asset.
+- `OracleHub` + `TwapOracle` provide price validity and breaker control.
 
-StableVault is a three-tier distributed system consisting of smart contracts on Sepolia blockchain, a Node.js backend service, and a React frontend application. The system enables users to deposit collateral, mint stablecoins, manage positions, and handles automated liquidations through keeper bots.
+Frontend and backend are supporting layers, not the trust core.
 
+## 2. Mermaid Architecture Diagram
+```mermaid
+flowchart TB
+    U[User Wallet] --> F[Frontend UI]
+    F -->|write tx / read state| SV[StableVault]
 
+    subgraph On-chain Stablecoin Core
+      SV -->|mint/burn authority| STB[STBToken]
+      SV -->|risk checks| OH[OracleHub]
+      OH -->|TWAP read| TO[TwapOracle]
+      OH -->|spot price read| CL[Chainlink ETH/USD]
+    end
 
-## Component Details
+    B[Backend API + Keeper + Indexer] -->|set demo/twap, liquidation bot, event indexing| SV
+    B -->|publish TWAP samples| TO
+    F -->|health/metrics/vault queries| B
 
-### Frontend Layer
+    style SV fill:#1f2937,color:#fff,stroke:#111827,stroke-width:2px
+    style STB fill:#1e3a8a,color:#fff,stroke:#1e40af
+    style OH fill:#0f766e,color:#fff,stroke:#115e59
+    style TO fill:#6d28d9,color:#fff,stroke:#5b21b6
+```
 
-The frontend is built with React and Vite, providing a user interface for interacting with the protocol. The Header component handles wallet connection using Wagmi, which integrates with MetaMask and other Web3 wallets. The Dashboard displays real-time information about the user's vault including collateral amount, debt, and collateral ratio. The ActionPanel provides input forms for deposit, mint, repay, and withdraw operations. The ContractContext uses React Context to manage global state and handle all smart contract interactions through ethers.js or viem.
+## 3. Contract Responsibilities
 
-### Backend Layer
+### StableVault (Core)
+- Maintains vault state: collateral, debt principal, accrued fee.
+- Handles user actions: `deposit`, `withdraw`, `mint`, `repay`.
+- Executes `liquidate` for unhealthy vaults.
+- Tracks protocol reserve and `systemBadDebt`.
+- Enforces controls: pause, keeper permissions, risk parameters.
 
-The backend is a Node.js service using Express that manages four main workers and a REST API server.
+### STBToken
+- ERC20-compatible stablecoin.
+- Only `StableVault` can `mint` and `burn`.
+- Standard transfer/approve/allowance for user and keeper flows.
 
-The REST API Server exposes endpoints at /health, /v1/protocol/metrics, /v1/oracle/status, /v1/vaults/:owner, /v1/vaults?health=danger, /v1/liquidations, and /v1/keeper/status. These endpoints allow the frontend and external systems to query vault states, oracle prices, protocol metrics, and liquidation history.
+### OracleHub
+- Combines spot + TWAP into validated risk price.
+- Breaker triggers on stale/deviated oracle data.
+- Supports owner-controlled demo mode for deterministic testing.
 
-The Indexer Worker listens to blockchain events including Deposited, Withdrawn, Minted, Repaid, and Liquidated events. It extracts vault owner information from these events and updates the vault_state table in the database. It also maintains a history of liquidation events in the liquidation_event table.
+### TwapOracle
+- Stores latest published TWAP price and timestamp.
+- Accepts updates only from owner/authorized publisher.
 
-The Keeper Worker periodically scans the vault_state table for vaults with health status of "danger" or "warning". For each at-risk vault, it attempts to execute a liquidate() transaction on the StableVault contract. It implements retry logic with exponential backoff to handle transaction failures. The status of keeper operations is tracked in the keeper_status table.
-
-The TWAP Worker runs at regular intervals to calculate time-weighted average prices. It samples the current Chainlink ETH/USD price, stores it in the oracle_sample table, and calculates the average of recent samples within the configured time window. It then calls updateTwap() on the TwapOracle contract to update the on-chain TWAP price.
-
-The SQLite Database stores all state using Prisma ORM. It includes tables for vault_state, liquidation_event, oracle_sample, and keeper_status.
-
-### Smart Contracts Layer
-
-StableVault.sol is the core contract managing vault creation, deposits, minting, repayment, and liquidation. It stores vault information in a mapping from owner address to Vault struct. It maintains protocol parameters like minimum collateral ratio (150%), stability fee (4% annually), and liquidation bonus (8%). It calls OracleHub to verify prices before executing risky operations.
-
-STBToken.sol is an ERC20 token representing the stablecoin. Only StableVault can mint and burn tokens. Users can transfer and approve STB for spending.
-
-OracleHub.sol verifies prices using both Chainlink aggregators and the TWAP oracle. It implements a circuit breaker that disables risky operations when prices deviate by more than 20% between spot and TWAP prices. It returns the effective price for liquidation calculations.
-
-TwapOracle.sol stores the most recent TWAP price updated by the backend TWAP Worker. It maintains the timestamp of the last update to detect stale prices.
-
+## 4. Key Design Decisions and Trade-offs
+- **Single core vault contract**:
+  - simpler integration and audit path
+  - trade-off: large core contract surface
+- **Oracle breaker before risky actions**:
+  - protects against bad pricing during mint/withdraw/liquidate windows
+  - trade-off: temporary user operation blocking during anomalies
+- **Keeper-based liquidation**:
+  - automates unhealthy vault cleanup
+  - trade-off: backend operator availability matters for automation quality
+- **Demo mode in OracleHub**:
+  - enables reliable demo/testing of liquidation and bad debt scenarios
+  - trade-off: strictly admin-controlled to avoid production misuse
 
 
 
