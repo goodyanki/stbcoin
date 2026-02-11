@@ -98,7 +98,7 @@ export function ContractProvider({ children }: { children: ReactNode }) {
         }
 
         try {
-            const [vaultRaw, ratioRaw, oracleStatus, ownerRaw] = await Promise.all([
+            const [vaultRes, ratioRes, oracleRes, ownerRes] = await Promise.allSettled([
                 publicClient.readContract({
                     address: CONTRACTS.stableVault,
                     abi: STABLE_VAULT_ABI,
@@ -125,12 +125,25 @@ export function ContractProvider({ children }: { children: ReactNode }) {
                 }),
             ])
 
+            if (vaultRes.status !== 'fulfilled' || ownerRes.status !== 'fulfilled') {
+                setData(defaultPosition)
+                return
+            }
+
+            const vaultRaw = vaultRes.value
+            const ownerRaw = ownerRes.value
+            const oracleStatus =
+                oracleRes.status === 'fulfilled'
+                    ? oracleRes.value
+                    : ([BigInt(0), BigInt(0), BigInt(0), BigInt(0), BigInt(0), false] as const)
+
             const collateral = Number(formatUnits(vaultRaw[0], 18))
             const debt = Number(formatUnits(vaultRaw[3], 18))
-
-            const ratioPercent = Number(ratioRaw) / 100
             const effectivePrice = Number(formatUnits(oracleStatus[0], 18))
             const liquidationPrice = collateral > 0 ? (1.5 * debt) / collateral : 0
+            const ratioPercent = ratioRes.status === 'fulfilled'
+                ? Number(ratioRes.value) / 100
+                : (debt > 0 && effectivePrice > 0 ? (collateral * effectivePrice / debt) * 100 : 0)
 
             setEthPrice(effectivePrice || 2500)
             setOwnerAddress(ownerRaw)
