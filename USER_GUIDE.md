@@ -1,275 +1,110 @@
-# StableVault userguide
+# StableVault User Guide
 
+## Project Overview
 
-Project Overview
-StableVault is an over-collateralized stablecoin protocol MVP deployed on the Sepolia testnet.
+StableVault is an over-collateralized stablecoin protocol MVP deployed on the Sepolia testnet. Users can deposit WETH as collateral to mint STB stablecoins. The protocol includes automated liquidation mechanisms, dual oracle verification with Chainlink spot prices and TWAP prices, a REST API for real-time data, and a web-based user interface.
 
-#core features
+## System Requirements
 
-- ✅ WETH Collateral Mechanism - Users deposit WETH as collateral
-✅ STB Stablecoin Minting - Mint STB stablecoins equivalent to the collateral ratio
-✅ Automated Liquidation - Keepers automatically execute liquidations when collateral is insufficient
-✅ Dual Oracle System - Chainlink spot price + TWAP price verification
-✅ REST API - Real-time protocol data query
-✅ Web UI - User-friendly interactive interface
+To run StableVault, you need Node.js version 20 or higher, npm for package management, Foundry for smart contract compilation and deployment, and Git for version control.
 
----
+To check if Node.js is installed, run `node --version` and `npm --version`. Check Foundry with `forge --version`. If Foundry is not installed, use this command:
 
-## 系统要求
-
-### 软件环境
-
-| 工具 | 版本 | 用途 |
-|------|------|------|
-| Node.js | 20+ | 后端服务和前端构建 |
-| npm | 最新 | 包管理器 |
-| Foundry | 最新 | 智能合约编译和部署 |
-| Git | - | 版本控制 |
-
-### 安装步骤
-
-```bash
-# 检查 Node.js 版本
-node --version    # 应该 >= v20.0.0
-npm --version
-
-# 检查 Foundry
-forge --version
-
-# 如果未安装 Foundry，运行
+```
 curl -L https://foundry.paradigm.xyz | bash
 foundryup
 ```
 
-### 网络要求
+You will also need access to a Sepolia testnet RPC node. Popular options include Alchemy and Infura.
 
-- 需要 **Sepolia 测试网 RPC 节点** 访问权限
-- 推荐使用 Alchemy、Infura 或其他公开 RPC
+## Quick Start
 
----
+First, clone the repository:
 
-## 快速开始
-
-### 第一步：获取源码
-
-```bash
+```
 git clone https://github.com/goodyanki/stbcoin.git
 cd stbcoin
 ```
 
-### 第二步：部署智能合约
+To deploy smart contracts, go to the contracts directory and copy the environment file:
 
-```bash
+```
 cd contracts
-
-# 复制环境配置文件
 cp .env.example .env
+```
 
-# 编辑 .env，设置以下内容：
-# PRIVATE_KEY=你的私钥（Sepolia 账户）
-# RPC_URL=你的 RPC 地址
-# CHAINLINK_ETH_USD=0x694AA1769357215DE4FAC081bf1f309adC325306  # Sepolia Chainlink
-# WETH_ADDRESS=0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9      # Sepolia WETH
+Edit the .env file with your private key for the Sepolia account, RPC URL, Chainlink ETH/USD aggregator address (0x694AA1769357215DE4FAC081bf1f309adC325306), and WETH address (0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9). Then deploy:
 
-# 部署合约
+```
 forge script script/DeploySepolia.s.sol:DeploySepolia \
   --rpc-url $RPC_URL \
   --broadcast \
   --verify
-
-# ✅ 记下输出的合约地址，后面需要用到
 ```
 
-### 第三步：启动后端服务
+Save the deployed contract addresses from the output, as you will need them for the backend and frontend configuration.
 
-```bash
+To start the backend service, navigate to the backend directory:
+
+```
 cd ../backend
-
-# 复制环境配置
 cp .env.example .env
+```
 
-# 编辑 .env，填入第二步获得的合约地址：
-# STABLE_VAULT_ADDRESS=0x...
-# STB_TOKEN_ADDRESS=0x...
-# ORACLE_HUB_ADDRESS=0x...
-# TWAP_ORACLE_ADDRESS=0x...
-# RPC_URL=你的 RPC 地址
-# KEEPER_ADDRESS=清算机器人地址（可选）
+In the .env file, add the contract addresses from the deployment step above: STABLE_VAULT_ADDRESS, STB_TOKEN_ADDRESS, ORACLE_HUB_ADDRESS, and TWAP_ORACLE_ADDRESS. Also set your RPC_URL and optionally KEEPER_ADDRESS for the liquidation bot.
 
-# 安装依赖
+Then install dependencies, initialize the database, and start the service:
+
+```
 npm install
-
-# 初始化数据库
 npx prisma generate
 npx prisma migrate dev --name init
-
-# 启动后端（会自动启动 Indexer、Keeper、TWAP Worker）
 npm run dev
-
-# 输出应包含：
-# ✅ Server running on http://localhost:3000
-# ✅ indexer backfill started
-# ✅ indexer subscribe started
-# ✅ twap worker started
-# ✅ keeper worker started
 ```
 
-### 第四步：启动前端
+The backend should now be running on http://localhost:3000. You should see messages indicating that the indexer, keeper, TWAP worker, and API server have started.
 
-```bash
+To start the frontend, go to the frontend directory:
+
+```
 cd ../frontend
-
-# 复制环境配置
 cp .env.example .env
+```
 
-# 编辑 .env，填入合约地址和前端配置：
-# VITE_STABLE_VAULT_ADDRESS=0x...
-# VITE_RPC_URL=你的 RPC 地址
-# VITE_CHAIN_ID=11155111  # Sepolia
+Edit .env with the contract address, RPC URL, and chain ID (11155111 for Sepolia):
 
-# 安装依赖
+```
 npm install
-
-# 启动开发服务器
 npm run dev
-
-# 访问 http://localhost:5173
 ```
 
-### 验证部署
+Access the frontend at http://localhost:5173. You can verify the backend is working by checking http://localhost:3000/health, which should return an OK response.
 
-```bash
-# 检查后端 API
-curl http://localhost:3000/health
-# 应返回 { "status": "ok" }
+## Core Features
 
-# 检查协议指标
-curl http://localhost:3000/v1/protocol/metrics
-```
+Depositing WETH and minting STB is the primary use case. You start by connecting your wallet to the Sepolia testnet. Then you select "Deposit" in the action panel and enter the amount of WETH you want to deposit as collateral. After confirming the transaction, your collateral is locked in the vault. Next, you can switch to the "Mint" section and enter the amount of STB you want to create. The amount is limited by your collateral ratio, which must stay above 150 percent.
 
----
+Your collateral ratio is calculated as the dollar value of your WETH collateral divided by your STB debt. A 150 percent ratio means your collateral is worth 1.5 times your debt. A ratio above 170 percent is considered safe, between 150 and 170 percent is a warning level, and below 150 percent is dangerous and can trigger liquidation.
 
-## 功能说明
+To repay your debt and withdraw collateral, you use the "Repay" and "Withdraw" actions. When you repay, you pay back STB tokens along with a stability fee, which is 4 percent annually. You cannot withdraw all your collateral until your debt is zero, and any withdrawal must maintain your ratio above 150 percent.
 
-### 1. 存入 WETH 和铸造 STB
+The dashboard displays your vault information including collateral amount, debt amount, and collateral ratio. It also shows protocol-wide metrics like total collateral, total STB supply, average collateral ratio, and the status of the oracle system including Chainlink spot prices and TWAP prices.
 
-**用途**：创建一个自己的金库（Vault），存入 WETH 作为抵押品，然后铸造等额的 STB 稳定币。
+## How Liquidation Works
 
-**前置条件**：
-- 连接钱包到 Sepolia
-- 拥有 WETH（可以从水龙头获取）
-- 足够的 gas 费用
+If your vault falls below 150 percent collateral ratio, it becomes eligible for liquidation. The liquidation process is automated through keeper bots that constantly monitor vault health. When a keeper finds an unhealthy vault, it can execute a liquidation transaction that partially pays off the debt and seizes some of your collateral as a reward. The liquidator receives an 8 percent bonus on the collateral they seize.
 
-**流程**：
-1. 在前端 "ActionPanel" 选择 "Deposit"
-2. 输入 WETH 数量，点击 "Deposit"
-3. 钱包确认交易
-4. 确认后，您的 Vault 中就有了抵押品
-5. 现在可以在 "Mint" 中铸造 STB（最多可铸造抵押品 1/2 的价值）
+After liquidation, your vault is adjusted so that the ratio recovers to approximately 170 percent, allowing you to continue using the vault or paying back remaining debt.
 
-**抵押率计算**：
-$$\text{抵押率} = \frac{\text{抵押 WETH 价值（美元）}}{\text{STB 债务金额}} \times 100\%$$
+## Protection Mechanisms
 
-- **最小安全率**：> 150% （可正常操作）
-- **警告级别**：150% ~ 170% （建议补充抵押）
-- **清算危险**：< 150% （随时可能被清算）
+The protocol includes an oracle circuit breaker to prevent operations during price anomalies. If the spot price from Chainlink deviates from the TWAP price by more than 20 percent, the system blocks new risky operations like depositing, minting, and withdrawing. Liquidations are still allowed during this period to prevent bad debt accumulation. Normal operations resume automatically once prices stabilize.
 
-### 2. 还款和提取
+## Using the Application
 
-**用途**：偿还 STB 债务并取回 WETH 抵押品。
+To create a vault, select "Deposit" and enter 10 WETH. After confirmation, you have 10 WETH as collateral worth approximately 20,000 dollars at a 2,000 dollar ETH price. Then select "Mint" and enter 5,000 STB. Your new collateral ratio is 400 percent, which is very safe.
 
-**流程**：
-1. 在前端 "ActionPanel" 选择 "Repay"
-2. 输入想要还款的 STB 数量
-3. 钱包确认，交易完成后债务会减少
-4. 选择 "Withdraw" 取回多余的 WETH
+If the market drops and ETH falls to 1,500 dollars, your ratio drops to 300 percent. You can add more collateral by depositing additional WETH to increase your safety margin. If the price rises to 2,500 dollars and you want to take profits, you can withdraw excess WETH as long as your ratio stays above 150 percent.
 
-**注意事项**：
-- 还款会支付**稳定费**（按年化 4% 计算）
-- 只有还清所有债务后才能全部提取 WETH
-- 提取时保证抵押率 > 150%
-
-### 3. 仪表板（Dashboard）
-
-**显示内容**：
-
-| 指标 | 说明 |
-|------|------|
-| **您的 Vault** | 抵押金额、债务、健康度评分 |
-| **协议总览** | 总抵押、总 STB 发行量、平均抵押率 |
-| **预言机状态** | Chainlink 现货价格、TWAP 价格、偏差 |
-| **清算历史** | 最近的清算事件 |
-
-### 4. 清液演示（LiquidationDemo）
-
-**仅限演示用途**：手动触发清算，观察清算过程。
-
-**清液逻辑**：
-- 当 Vault 抵押率 < 150% 时，任何人都可以清算它
-- 清算人支付部分债务，获得相应抵押物 + 8% 奖励
-- 被清算的 Vault 恢复到 170% 抵押率
-
----
-
-## 操作指南
-
-### 常见操作流程
-
-#### 场景 1：我想创建一个 Vault
-
-```
-1. 前端 → ActionPanel → Deposit
-2. 输入 WETH 数量（如 10 WETH）
-3. 确认交易
-4. 现在您有了 10 WETH 的抵押品
-5. Mint → 输入想铸造的 STB 数量（如 5000 STB）
-6. 确认交易完成
-```
-
-**您的 Vault 状态**：
-- 抵押：10 WETH ≈ $20,000（假设 ETH=$2000）
-- 债务：5000 STB
-- 抵押率：400%（非常安全）
-
-#### 场景 2：市场下跌，我需要补充抵押品
-
-```
-价格下跌 → ETH = $1500
-您的抵押率 = $15,000 / 5000 = 300%（仍安全，但有风险）
-
-解决方案：
-1. Deposit → 再存 5 WETH
-2. 您的抵押率升至 500%（安全）
-```
-
-#### 场景 3：价格回升，我想套现部分 WETH
-
-```
-价格上升 → ETH = $2500
-您现在有：15 WETH × $2500 = $37,500（原本 $20,000）
-
-解决方案：
-1. Withdraw → 取出 5 WETH
-2. 保证抵押率 > 150%
-3. 即可套现获利
-```
-
-#### 场景 4：我遭遇清算了，怎么办？
-
-```
-如果您的 Vault 被清算：
-1. 清液人会偿还您部分债务
-2. 您会失去一部分抵押物（清液奖励）
-3. 您剩余的 Vault 会恢复到 170% 抵押率
-4. 您可以继续操作这个 Vault
-
-⚠️ 预防最好：
-- 定期监控抵押率
-- 保持 > 200% 的缓冲
-- 市场波动时及时补充抵押
-```
-
----
-
-
+If your vault is liquidated, the liquidator covers part of your debt and takes some collateral. Your remaining vault adjusts to a 170 percent ratio. You can continue using the vault or repay the remaining debt. To avoid liquidation, monitor your ratio regularly and maintain a buffer above 200 percent.
 
