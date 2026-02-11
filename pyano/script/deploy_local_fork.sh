@@ -30,29 +30,30 @@ deploy_contract() {
   forge create "${target}" \
     --rpc-url "${RPC_URL}" \
     --private-key "${PRIVATE_KEY}" \
+    --broadcast \
     --constructor-args "$@" | awk '/Deployed to:/{print $3}'
 }
 
 echo "Owner: ${OWNER}"
 
 echo "Deploy OracleChainAdapter..."
-ORACLE="$(deploy_contract src/OracleChainAdapter.vy "${FEED_ADDRESS}" "${MAX_AGE}" "${MAX_CHANGE_BPS}" "${OWNER}")"
+ORACLE="$(deploy_contract src/OracleChainAdapter.vy:OracleChainAdapter "${FEED_ADDRESS}" "${MAX_AGE}" "${MAX_CHANGE_BPS}" "${OWNER}")"
 echo "ORACLE=${ORACLE}"
 
 echo "Deploy VaultManager (temp engine=owner)..."
-VAULT="$(deploy_contract src/VaultManager.vy "${ORACLE}" "${OWNER}" "${OWNER}")"
+VAULT="$(deploy_contract src/VaultManager.vy:VaultManager "${ORACLE}" "${OWNER}" "${OWNER}")"
 echo "VAULT_MANAGER=${VAULT}"
 
 echo "Deploy Stablecoin (temp minter=owner)..."
-STABLECOIN="$(deploy_contract src/Stablecoin.vy "Stable BTC" "STB" 18 "${OWNER}" "${OWNER}")"
+STABLECOIN="$(deploy_contract src/Stablecoin.vy:Stablecoin "Stable BTC" "STB" 18 "${OWNER}" "${OWNER}")"
 echo "STABLECOIN=${STABLECOIN}"
 
 echo "Deploy StabilityEngine..."
-ENGINE="$(deploy_contract src/StabilityEngine.vy "${STABLECOIN}" "${VAULT}" "${OWNER}" "${MCR}" "${MINT_FEE_BPS}" "${REPAY_FEE_BPS}" "${DEBT_CAP_PER_VAULT}" "${GLOBAL_DEBT_CAP}")"
+ENGINE="$(deploy_contract src/StabilityEngine.vy:StabilityEngine "${STABLECOIN}" "${VAULT}" "${OWNER}" "${MCR}" "${MINT_FEE_BPS}" "${REPAY_FEE_BPS}" "${DEBT_CAP_PER_VAULT}" "${GLOBAL_DEBT_CAP}")"
 echo "STABILITY_ENGINE=${ENGINE}"
 
 echo "Deploy LiquidationEnging..."
-LIQUIDATION="$(deploy_contract src/LiquidationEnging.vy "${STABLECOIN}" "${VAULT}" "${ENGINE}" "${OWNER}" "${LIQ_PENALTY_BPS}")"
+LIQUIDATION="$(deploy_contract src/LiquidationEnging.vy:LiquidationEnging "${STABLECOIN}" "${VAULT}" "${ENGINE}" "${OWNER}" "${LIQ_PENALTY_BPS}")"
 echo "LIQUIDATION_ENGINE=${LIQUIDATION}"
 
 echo "Wire permissions..."

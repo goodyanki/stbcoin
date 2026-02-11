@@ -1,5 +1,5 @@
 import { useAccount, useConnect, useDisconnect, useBalance, useChainId, useSwitchChain } from 'wagmi'
-import { foundry } from 'wagmi/chains'
+import { sepolia } from 'wagmi/chains'
 import { WalletOutlined, LogoutOutlined, DownOutlined, WarningOutlined } from '@ant-design/icons'
 import { Button, Dropdown, Tag, Typography, Space } from 'antd'
 import type { MenuProps } from 'antd'
@@ -44,15 +44,15 @@ export function ConnectWallet() {
     )
   }
 
-  if (chainId !== foundry.id) {
+  if (chainId !== sepolia.id) {
     return (
       <Button
         type="primary"
         danger
         icon={<WarningOutlined />}
-        onClick={() => switchChain({ chainId: foundry.id })}
+        onClick={() => switchChain({ chainId: sepolia.id })}
       >
-        切换至本地链 31337
+        切换至 Sepolia 11155111
       </Button>
     )
   }
@@ -69,7 +69,7 @@ export function ConnectWallet() {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-      <Tag color="success">Local Fork</Tag>
+      <Tag color="success">Sepolia</Tag>
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.2 }}>
         <Text style={{ color: '#fff', fontWeight: 500 }}>
