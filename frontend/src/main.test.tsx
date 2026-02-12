@@ -17,6 +17,20 @@ vi.mock('./wagmi.ts', () => ({
   config: { test: true },
 }))
 
+vi.mock('wagmi', () => ({
+  WagmiProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}))
+
+vi.mock('@tanstack/react-query', () => ({
+  QueryClient: class QueryClientMock {},
+  QueryClientProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}))
+
+vi.mock('antd', () => ({
+  ConfigProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  theme: { darkAlgorithm: {} },
+}))
+
 vi.mock('./context/ContractContext.tsx', () => ({
   ContractProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))

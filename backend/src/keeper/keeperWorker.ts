@@ -5,6 +5,8 @@ import { stableVault, stbToken as _stbToken } from "../contracts/client.js";
 import { prisma } from "../lib/prisma.js";
 import { logger } from "../lib/logger.js";
 
+type KeeperErrorClass = "config" | "rpc" | "revert" | "decode" | "unknown";
+
 type KeeperState = {
   active: boolean;
   lastRunAt: Date | null;
@@ -16,6 +18,12 @@ type KeeperState = {
     retried: number;
   };
   recentFailures: Array<{ owner: string; attempts: number; reason: string; at: string }>;
+  lastErrorClass: KeeperErrorClass | null;
+  lastErrorMessage: string | null;
+  lastErrorAt: Date | null;
+  lastAutoFundAt: Date | null;
+  autoFundLastResult: string | null;
+  ownersScannedOnChain: number;
 };
 
 type LiquidationTxLike = {
@@ -23,6 +31,11 @@ type LiquidationTxLike = {
 };
 
 type LiquidateFn = (owner: string, repayAmount: bigint) => Promise<LiquidationTxLike>;
+
+type KeeperSignerLike = {
+  sendTransaction: (...args: unknown[]) => Promise<unknown>;
+  getAddress: () => Promise<string>;
+};
 
 const keeperState: KeeperState = {
   active: false,
@@ -34,8 +47,16 @@ const keeperState: KeeperState = {
     failed: 0,
     retried: 0
   },
-  recentFailures: []
+  recentFailures: [],
+  lastErrorClass: null,
+  lastErrorMessage: null,
+  lastErrorAt: null,
+  lastAutoFundAt: null,
+  autoFundLastResult: null,
+  ownersScannedOnChain: 0
 };
+
+let lastAutoFundAttemptAt = 0;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -48,17 +69,83 @@ function asReason(error: unknown): string {
   return String(error);
 }
 
+function classifyError(error: unknown): KeeperErrorClass {
+  const message = asReason(error).toLowerCase();
+
+  if (
+    message.includes("private key") ||
+    message.includes("signer unavailable") ||
+    message.includes("missing")
+  ) {
+    return "config";
+  }
+
+  if (
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("socket") ||
+    message.includes("rpc") ||
+    message.includes("failed to fetch")
+  ) {
+    return "rpc";
+  }
+
+  if (
+    message.includes("execution reverted") ||
+    message.includes("call exception") ||
+    message.includes("revert") ||
+    message.includes("insufficient")
+  ) {
+    return "revert";
+  }
+
+  if (
+    message.includes("decode") ||
+    message.includes("bad data") ||
+    message.includes("unexpected amount of data")
+  ) {
+    return "decode";
+  }
+
+  return "unknown";
+}
+
+function setLastError(error: unknown, klass?: KeeperErrorClass): void {
+  keeperState.lastErrorClass = klass ?? classifyError(error);
+  keeperState.lastErrorMessage = asReason(error);
+  keeperState.lastErrorAt = new Date();
+}
+
 function isHexAddress(value: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
 }
 
-async function listVaultCandidates(limit = 100): Promise<string[]> {
+function isKeeperSigner(value: unknown): value is KeeperSignerLike {
+  if (!value || typeof value !== "object") return false;
+  const maybeSigner = value as KeeperSignerLike;
+  return typeof maybeSigner.sendTransaction === "function" && typeof maybeSigner.getAddress === "function";
+}
+
+async function listVaultCandidates(): Promise<string[]> {
   const rows = await prisma.vaultState.findMany({
-    orderBy: { updatedAt: "desc" },
-    take: limit
+    select: { owner: true }
   });
 
-  return rows.map((row) => row.owner).filter(isHexAddress);
+  const ownerSet = new Set<string>();
+
+  for (const row of rows) {
+    if (isHexAddress(row.owner)) {
+      ownerSet.add(row.owner.toLowerCase());
+    }
+  }
+
+  for (const owner of env.watchOwners) {
+    if (isHexAddress(owner)) {
+      ownerSet.add(owner.toLowerCase());
+    }
+  }
+
+  return Array.from(ownerSet);
 }
 
 export function computeBackoffMs(baseBackoffMs: number, attempt: number): number {
@@ -120,60 +207,106 @@ async function attemptLiquidationWithRetry(owner: string, repayAmount: bigint): 
   });
 }
 
-export async function runKeeperTick(): Promise<void> {
-  if (!stableVault.runner || !("sendTransaction" in stableVault.runner)) {
-    logger.warn("keeper signer unavailable, skipping tick");
-    return;
+async function autoFundKeeper(repayAmount: bigint): Promise<string> {
+  if (!env.keeperAutoFundEnabled) {
+    return "disabled";
   }
 
+  const now = Date.now();
+  const cooldownMs = Math.max(0, env.keeperAutoFundCooldownMs);
+  if (now - lastAutoFundAttemptAt < cooldownMs) {
+    return "cooldown";
+  }
+
+  const runner = stableVault.runner;
+  if (!isKeeperSigner(runner)) {
+    throw new Error("keeper signer unavailable");
+  }
+
+  lastAutoFundAttemptAt = now;
+  keeperState.lastAutoFundAt = new Date();
+
+  const keeperAddress = await runner.getAddress();
+
+  const allowance = (await _stbToken.getFunction("allowance")(
+    keeperAddress,
+    env.stableVaultAddress
+  )) as bigint;
+
+  if (allowance < repayAmount) {
+    const approveTx = (await _stbToken.getFunction("approve")(
+      env.stableVaultAddress,
+      1n << 255n
+    )) as LiquidationTxLike;
+    await approveTx.wait();
+  }
+
+  const balance = (await _stbToken.getFunction("balanceOf")(keeperAddress)) as bigint;
+  if (balance >= repayAmount) {
+    return allowance < repayAmount ? "approved" : "ready";
+  }
+
+  const autoFundDepositEth = parseUnits(env.keeperAutoFundDepositEth, 18);
+  const autoFundMintStb = parseUnits(env.keeperAutoFundMintStb, 18);
+  if (autoFundDepositEth <= 0n || autoFundMintStb <= 0n) {
+    throw new Error("auto-fund amounts must be positive");
+  }
+
+  const depositTx = (await stableVault.deposit(autoFundDepositEth, {
+    value: autoFundDepositEth
+  })) as LiquidationTxLike;
+  await depositTx.wait();
+
+  const mintTx = (await stableVault.mint(autoFundMintStb)) as LiquidationTxLike;
+  await mintTx.wait();
+
+  return "funded";
+}
+
+export async function runKeeperTick(): Promise<void> {
   const startedAt = Date.now();
   const candidates = await listVaultCandidates();
+  const signerReady = isKeeperSigner(stableVault.runner);
   let attempted = 0;
   let succeeded = 0;
   let failed = 0;
   let retried = 0;
+  let ownersScannedOnChain = 0;
   const failures: Array<{ owner: string; attempts: number; reason: string; at: string }> = [];
 
   const repayAmount = parseUnits(env.keeperMaxRepayStb, 18);
+  let autoFundLastResult = "disabled";
 
-  // --- Auto-Fund & Approve Logic for Demo ---
-  try {
-    // We expect runner to be a Wallet or Signer in this context
-    const runner = stableVault.runner as unknown as { getAddress: () => Promise<string> };
-    if (runner && runner.getAddress) {
-      const keeperAddress = await runner.getAddress();
-      if (keeperAddress) {
-        // 1. Check Allowance
-        const allowance = (await _stbToken.getFunction("allowance")(keeperAddress, env.stableVaultAddress)) as bigint;
-        if (allowance < repayAmount) {
-          logger.info("approving STB for vault...");
-          const tx = await _stbToken.getFunction("approve")(env.stableVaultAddress, (1n << 255n));
-          await tx.wait();
-        }
-
-        // 2. Check Balance & Auto-Fund
-        const balance = (await _stbToken.getFunction("balanceOf")(keeperAddress)) as bigint;
-        if (balance < repayAmount) {
-          logger.info("keeper low on STB, auto-funding for demo...");
-          // Deposit 100 ETH
-          const tx1 = await stableVault.deposit(parseUnits("100", 18), { value: parseUnits("100", 18) });
-          await tx1.wait();
-          // Mint 100,000 STB
-          const tx2 = await stableVault.mint(parseUnits("100000", 18));
-          await tx2.wait();
-          logger.info("keeper auto-funded with 100k STB");
-        }
-      }
-    }
-  } catch (err) {
-    logger.error({ err }, "failed to auto-fund keeper");
+  if (!signerReady) {
+    setLastError(new Error("keeper signer unavailable"), "config");
   }
-  // ------------------------------------------
+
+  try {
+    autoFundLastResult = await autoFundKeeper(repayAmount);
+  } catch (error) {
+    autoFundLastResult = `failed:${asReason(error)}`;
+    setLastError(error);
+    logger.error({ error }, "failed to auto-fund keeper");
+  }
 
   for (const owner of candidates) {
     try {
+      ownersScannedOnChain += 1;
       const liquidatable = (await stableVault.isLiquidatable(owner)) as boolean;
       if (!liquidatable) continue;
+
+      if (!signerReady) {
+        failed += 1;
+        const reason = "keeper signer unavailable";
+        failures.push({
+          owner,
+          attempts: 0,
+          reason,
+          at: new Date().toISOString()
+        });
+        setLastError(new Error(reason), "config");
+        continue;
+      }
 
       attempted += 1;
 
@@ -188,6 +321,7 @@ export async function runKeeperTick(): Promise<void> {
         failed += 1;
         const reason = result.reason ?? "unknown";
         failures.push({ owner, attempts: result.attempts, reason, at: new Date().toISOString() });
+        setLastError(new Error(reason));
       }
     } catch (error) {
       failed += 1;
@@ -197,6 +331,7 @@ export async function runKeeperTick(): Promise<void> {
         reason: asReason(error),
         at: new Date().toISOString()
       });
+      setLastError(error);
       logger.error({ owner, error }, "keeper liquidation failed before retry path");
     }
   }
@@ -213,11 +348,13 @@ export async function runKeeperTick(): Promise<void> {
     retried
   };
   keeperState.recentFailures = failures.slice(0, 20);
+  keeperState.autoFundLastResult = autoFundLastResult;
+  keeperState.ownersScannedOnChain = ownersScannedOnChain;
 
   await prisma.keeperRun.create({
     data: {
       runAt: new Date(),
-      scanned: candidates.length,
+      scanned: ownersScannedOnChain,
       attempted,
       succeeded,
       failed,
@@ -241,9 +378,8 @@ export function startKeeperWorker(): NodeJS.Timeout {
   keeperState.active = true;
   return setInterval(() => {
     void runKeeperTick().catch((error) => {
+      setLastError(error);
       logger.error({ error }, "keeper tick failed");
     });
   }, env.keeperIntervalMs);
 }
-
-

@@ -1,5 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('wagmi/chains', () => ({
+  foundry: { id: 31337 },
+  sepolia: { id: 11155111 },
+}))
+
+vi.mock('wagmi/connectors', () => ({
+  injected: vi.fn(() => ({ connector: 'injected' })),
+}))
+
+vi.mock('wagmi', () => ({
+  http: vi.fn((url?: string) => ({ url })),
+  createConfig: vi.fn((value: unknown) => value),
+}))
+
 describe('src/wagmi.ts', () => {
   beforeEach(() => {
     vi.resetModules()

@@ -7,7 +7,7 @@ describe('src/config/contracts.ts', () => {
   })
 
   it('uses default backend url when env is missing', async () => {
-    vi.unstubAllEnvs()
+    vi.stubEnv('VITE_BACKEND_URL', undefined)
     const mod = await import('./contracts')
 
     expect(mod.CONTRACTS.backendBaseUrl).toBe('http://localhost:8080')

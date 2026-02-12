@@ -38,16 +38,57 @@ function isHexAddress(value: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
 }
 
+async function queryFilterInChunks(
+  filter: Parameters<typeof stableVault.queryFilter>[0],
+  fromBlock: number,
+  toBlock: number,
+  step: number
+) {
+  if (toBlock < fromBlock) return [];
+
+  const results: unknown[] = [];
+  const chunkSize = Math.max(1, step);
+
+  for (let current = fromBlock; current <= toBlock; current += chunkSize) {
+    const chunkFrom = current;
+    const chunkTo = Math.min(toBlock, current + chunkSize - 1);
+
+    let chunkLoaded = false;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const logs = await stableVault.queryFilter(filter, chunkFrom, chunkTo);
+        results.push(...logs);
+        chunkLoaded = true;
+        break;
+      } catch (error) {
+        logger.error(
+          { error, chunkFrom, chunkTo, attempt },
+          "chunk queryFilter failed"
+        );
+      }
+    }
+
+    if (!chunkLoaded) {
+      logger.warn({ chunkFrom, chunkTo }, "skipping failed chunk after retries");
+    }
+  }
+
+  return results;
+}
+
 export async function backfillLiquidations(): Promise<void> {
   const latest = await stableVault.runner?.provider?.getBlockNumber();
   if (latest === undefined) return;
 
+  const startBlock = Math.max(0, env.startBlock);
+  const chunkRange = Math.max(1, env.indexerBlockRange);
+
   const [deposits, withdrawals, mints, repays, liquidations] = await Promise.all([
-    stableVault.queryFilter(stableVault.filters.Deposited(), env.startBlock, latest),
-    stableVault.queryFilter(stableVault.filters.Withdrawn(), env.startBlock, latest),
-    stableVault.queryFilter(stableVault.filters.Minted(), env.startBlock, latest),
-    stableVault.queryFilter(stableVault.filters.Repaid(), env.startBlock, latest),
-    stableVault.queryFilter(stableVault.filters.Liquidated(), env.startBlock, latest)
+    queryFilterInChunks(stableVault.filters.Deposited(), startBlock, latest, chunkRange),
+    queryFilterInChunks(stableVault.filters.Withdrawn(), startBlock, latest, chunkRange),
+    queryFilterInChunks(stableVault.filters.Minted(), startBlock, latest, chunkRange),
+    queryFilterInChunks(stableVault.filters.Repaid(), startBlock, latest, chunkRange),
+    queryFilterInChunks(stableVault.filters.Liquidated(), startBlock, latest, chunkRange)
   ]);
 
   const ownerSet = new Set<string>();
@@ -123,60 +164,64 @@ export function subscribeLiquidations(): void {
     }
   };
 
-  stableVault.on("Deposited", async (owner: string) => {
-    await refreshOwnerFromEvent(owner);
-  });
+  try {
+    stableVault.on("Deposited", async (owner: string) => {
+      await refreshOwnerFromEvent(owner);
+    });
 
-  stableVault.on("Withdrawn", async (owner: string) => {
-    await refreshOwnerFromEvent(owner);
-  });
+    stableVault.on("Withdrawn", async (owner: string) => {
+      await refreshOwnerFromEvent(owner);
+    });
 
-  stableVault.on("Minted", async (owner: string) => {
-    await refreshOwnerFromEvent(owner);
-  });
+    stableVault.on("Minted", async (owner: string) => {
+      await refreshOwnerFromEvent(owner);
+    });
 
-  stableVault.on("Repaid", async (owner: string) => {
-    await refreshOwnerFromEvent(owner);
-  });
+    stableVault.on("Repaid", async (owner: string) => {
+      await refreshOwnerFromEvent(owner);
+    });
 
-  stableVault.on(
-    "Liquidated",
-    async (
-      owner: string,
-      liquidator: string,
-      repayAmount: bigint,
-      seizedCollateral: bigint,
-      badDebtDelta: bigint,
-      event: { log: { transactionHash: string; blockNumber: number } }
-    ) => {
-      try {
-        const block = await stableVault.runner?.provider?.getBlock(event.log.blockNumber);
-        await prisma.liquidationEvent.upsert({
-          where: { txHash: event.log.transactionHash },
-          update: {
-            owner,
-            liquidator,
-            repayAmount: repayAmount.toString(),
-            seizedAmount: seizedCollateral.toString(),
-            badDebtDelta: badDebtDelta.toString(),
-            blockNumber: event.log.blockNumber,
-            blockTime: new Date((block?.timestamp ?? Math.floor(Date.now() / 1000)) * 1000)
-          },
-          create: {
-            txHash: event.log.transactionHash,
-            owner,
-            liquidator,
-            repayAmount: repayAmount.toString(),
-            seizedAmount: seizedCollateral.toString(),
-            badDebtDelta: badDebtDelta.toString(),
-            blockNumber: event.log.blockNumber,
-            blockTime: new Date((block?.timestamp ?? Math.floor(Date.now() / 1000)) * 1000)
-          }
-        });
-        await refreshOwnerFromEvent(owner);
-      } catch (error) {
-        logger.error({ error }, "failed to persist liquidation event");
+    stableVault.on(
+      "Liquidated",
+      async (
+        owner: string,
+        liquidator: string,
+        repayAmount: bigint,
+        seizedCollateral: bigint,
+        badDebtDelta: bigint,
+        event: { log: { transactionHash: string; blockNumber: number } }
+      ) => {
+        try {
+          const block = await stableVault.runner?.provider?.getBlock(event.log.blockNumber);
+          await prisma.liquidationEvent.upsert({
+            where: { txHash: event.log.transactionHash },
+            update: {
+              owner,
+              liquidator,
+              repayAmount: repayAmount.toString(),
+              seizedAmount: seizedCollateral.toString(),
+              badDebtDelta: badDebtDelta.toString(),
+              blockNumber: event.log.blockNumber,
+              blockTime: new Date((block?.timestamp ?? Math.floor(Date.now() / 1000)) * 1000)
+            },
+            create: {
+              txHash: event.log.transactionHash,
+              owner,
+              liquidator,
+              repayAmount: repayAmount.toString(),
+              seizedAmount: seizedCollateral.toString(),
+              badDebtDelta: badDebtDelta.toString(),
+              blockNumber: event.log.blockNumber,
+              blockTime: new Date((block?.timestamp ?? Math.floor(Date.now() / 1000)) * 1000)
+            }
+          });
+          await refreshOwnerFromEvent(owner);
+        } catch (error) {
+          logger.error({ error }, "failed to persist liquidation event");
+        }
       }
-    }
-  );
+    );
+  } catch (error) {
+    logger.error({ error }, "subscribeLiquidations failed, keeper will continue with polling snapshot state");
+  }
 }

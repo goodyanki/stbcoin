@@ -39,7 +39,7 @@ describe('LiquidationDemo', () => {
 
     render(<LiquidationDemo />)
     expect(
-      screen.getByText(/Read-only mode: liquidation is executed by auto-keeper/i)
+      screen.getByText(/Read-only mode: check liquidation history\/status API/i)
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Apply Demo Price/i })).toBeDisabled()
   })

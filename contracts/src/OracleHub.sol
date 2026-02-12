@@ -55,7 +55,7 @@ contract OracleHub is Ownable {
     /// @dev Reverts if demo mode is disabled or price is zero.
     /// @param priceE18 Demo ETH/USD price in 1e18 precision.
     function setDemoPrice(uint256 priceE18) external onlyOwner {
-        if (!demoMode) revert InvalidPrice();
+        if (!demoMode || priceE18 == 0) revert InvalidPrice();
         demoPriceE18 = priceE18;
         emit DemoPriceSet(priceE18);
     }

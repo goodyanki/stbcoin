@@ -21,6 +21,17 @@ Over-collateralized stablecoin MVP:
 ## Quick Start (Recommended: Local Fork)
 This is the easiest way to run everything end-to-end.
 
+### 0) One-command bootstrap (recommended)
+```bash
+./scripts/dev_bootstrap.sh
+```
+
+This script will:
+- start/reuse local anvil fork
+- deploy contracts
+- write `backend/.env` and `frontend/.env(.local)` automatically
+- set local demo defaults (`demo mode`, `keeper key`, `start block`)
+
 ### 1) Install dependencies
 ```bash
 cd /home/nick/stbcoin
@@ -153,6 +164,10 @@ slither . --json ../docs/slither-report.json || true
 ```
 
 ## Common Issues
+- Price drop but `debt` does not change:
+  - expected behavior: price move changes collateral ratio, not debt principal
+  - debt changes only after `repay` or `liquidate`
+  - check `GET /v1/liquidations?limit=20` and `GET /v1/keeper/status`
 - `Connection refused` when deploy/call:
   - check Anvil is running on `127.0.0.1:8545`
   - `set -a; source .env; set +a` before using `$RPC_URL`

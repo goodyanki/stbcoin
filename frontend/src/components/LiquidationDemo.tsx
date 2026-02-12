@@ -49,6 +49,12 @@ export function LiquidationDemo() {
             <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>
                 Simulate price changes and trigger liquidation flow.
             </Text>
+            <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="Price moves change collateral ratio first; debt only changes after repay or liquidation."
+            />
 
             <div style={{ marginBottom: 24 }}>
                 <Row justify="space-between" align="middle" style={{ marginBottom: 8 }}>
@@ -94,8 +100,8 @@ export function LiquidationDemo() {
                     showIcon
                     message={
                         isOwner
-                            ? 'Admin mode: adjust demo price and let auto-keeper execute liquidation.'
-                            : 'Read-only mode: liquidation is executed by auto-keeper when vault turns dangerous.'
+                            ? 'Admin mode: adjust demo price and wait for auto-keeper liquidation events.'
+                            : 'Read-only mode: check liquidation history/status API to confirm debt changes.'
                     }
                 />
 
@@ -104,4 +110,3 @@ export function LiquidationDemo() {
         </Card>
     )
 }
-

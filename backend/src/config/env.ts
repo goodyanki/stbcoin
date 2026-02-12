@@ -3,6 +3,18 @@ import { z } from "zod";
 
 loadDotenv();
 
+function parseBoolean(value: string): boolean {
+  return value.trim().toLowerCase() === "true";
+}
+
+function parseWatchOwners(value: string): string[] {
+  const candidates = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return candidates.filter((entry) => /^0x[a-fA-F0-9]{40}$/.test(entry));
+}
+
 const schema = z.object({
   PORT: z.string().default("8080"),
   DATABASE_URL: z.string().default("file:./dev.db"),
@@ -20,7 +32,13 @@ const schema = z.object({
   ORACLE_INTERVAL_MS: z.string().default("60000"),
   TWAP_WINDOW_SECONDS: z.string().default("1800"),
   TWAP_SAMPLE_LIMIT: z.string().default("120"),
-  KEEPER_MAX_REPAY_STB: z.string().default("1000")
+  KEEPER_MAX_REPAY_STB: z.string().default("1000"),
+  KEEPER_AUTO_FUND_ENABLED: z.string().default("false"),
+  KEEPER_AUTO_FUND_COOLDOWN_MS: z.string().default("60000"),
+  KEEPER_AUTO_FUND_DEPOSIT_ETH: z.string().default("20"),
+  KEEPER_AUTO_FUND_MINT_STB: z.string().default("20000"),
+  WATCH_OWNERS: z.string().default(""),
+  INDEXER_BLOCK_RANGE: z.string().default("2000")
 });
 
 const parsed = schema.parse(process.env);
@@ -42,5 +60,11 @@ export const env = {
   oracleIntervalMs: Number(parsed.ORACLE_INTERVAL_MS),
   twapWindowSeconds: Number(parsed.TWAP_WINDOW_SECONDS),
   twapSampleLimit: Number(parsed.TWAP_SAMPLE_LIMIT),
-  keeperMaxRepayStb: parsed.KEEPER_MAX_REPAY_STB
+  keeperMaxRepayStb: parsed.KEEPER_MAX_REPAY_STB,
+  keeperAutoFundEnabled: parseBoolean(parsed.KEEPER_AUTO_FUND_ENABLED),
+  keeperAutoFundCooldownMs: Number(parsed.KEEPER_AUTO_FUND_COOLDOWN_MS),
+  keeperAutoFundDepositEth: parsed.KEEPER_AUTO_FUND_DEPOSIT_ETH,
+  keeperAutoFundMintStb: parsed.KEEPER_AUTO_FUND_MINT_STB,
+  watchOwners: parseWatchOwners(parsed.WATCH_OWNERS),
+  indexerBlockRange: Number(parsed.INDEXER_BLOCK_RANGE)
 };
