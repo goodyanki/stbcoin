@@ -1,12 +1,18 @@
-import { Contract, JsonRpcProvider, Wallet } from "ethers";
+import { Contract, JsonRpcProvider, NonceManager, Wallet } from "ethers";
 
 import { env } from "../config/env.js";
 import { ORACLE_HUB_ABI, STABLE_VAULT_ABI, TWAP_ORACLE_ABI } from "./abis.js";
 
 export const provider = new JsonRpcProvider(env.rpcUrl, env.chainId);
 
-export const keeperSigner = env.keeperPrivateKey
+const _keeperWallet = env.keeperPrivateKey
   ? new Wallet(env.keeperPrivateKey, provider)
+  : undefined;
+
+// Wrap with NonceManager so ethers always queries the chain for latest nonce.
+// This avoids "nonce too low" errors after Anvil restarts / redeployments.
+export const keeperSigner = _keeperWallet
+  ? new NonceManager(_keeperWallet)
   : undefined;
 
 export const stableVault = new Contract(
