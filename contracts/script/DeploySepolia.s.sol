@@ -33,6 +33,7 @@ contract DeploySepolia is Script {
         }
 
         vault.setKeeper(keeper, true);
+        oracleHub.transferOwnership(address(vault));
 
         oracleHub.transferOwnership(address(vault));
 
