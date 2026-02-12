@@ -34,14 +34,14 @@ contract DeploySepolia is Script {
 
         vault.setKeeper(keeper, true);
 
+        oracleHub.transferOwnership(address(vault));
+
         if (enableDemoMode) {
             vault.setDemoMode(true);
             if (demoPriceE18 > 0) {
                 vault.setDemoPrice(demoPriceE18);
             }
         }
-
-        oracleHub.transferOwnership(address(vault));
 
         vm.stopBroadcast();
     }
