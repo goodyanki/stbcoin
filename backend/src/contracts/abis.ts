@@ -9,7 +9,9 @@ export const STABLE_VAULT_ABI = [
   "function getSystemBadDebt() view returns (uint256)",
   "function protocolReserveStb() view returns (uint256)",
   "function liquidate(address owner, uint256 repayAmount)",
-  "event Liquidated(address indexed owner, address indexed liquidator, uint256 repayAmount, uint256 seizedCollateral, uint256 badDebtDelta)"
+  "event Liquidated(address indexed owner, address indexed liquidator, uint256 repayAmount, uint256 seizedCollateral, uint256 badDebtDelta)",
+  "function deposit(uint256 ethAmount) payable",
+  "function mint(uint256 stbAmount)"
 ];
 
 export const ORACLE_HUB_ABI = [

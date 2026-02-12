@@ -1,7 +1,7 @@
 import { parseUnits } from "ethers";
 
 import { env } from "../config/env.js";
-import { stableVault } from "../contracts/client.js";
+import { stableVault, stbToken as _stbToken } from "../contracts/client.js";
 import { prisma } from "../lib/prisma.js";
 import { logger } from "../lib/logger.js";
 
@@ -54,11 +54,6 @@ function isHexAddress(value: string): boolean {
 
 async function listVaultCandidates(limit = 100): Promise<string[]> {
   const rows = await prisma.vaultState.findMany({
-    where: {
-      health: {
-        in: ["danger", "warning"]
-      }
-    },
     orderBy: { updatedAt: "desc" },
     take: limit
   });
@@ -141,6 +136,40 @@ export async function runKeeperTick(): Promise<void> {
 
   const repayAmount = parseUnits(env.keeperMaxRepayStb, 18);
 
+  // --- Auto-Fund & Approve Logic for Demo ---
+  try {
+    // We expect runner to be a Wallet or Signer in this context
+    const runner = stableVault.runner as unknown as { getAddress: () => Promise<string> };
+    if (runner && runner.getAddress) {
+      const keeperAddress = await runner.getAddress();
+      if (keeperAddress) {
+        // 1. Check Allowance
+        const allowance = (await _stbToken.getFunction("allowance")(keeperAddress, env.stableVaultAddress)) as bigint;
+        if (allowance < repayAmount) {
+          logger.info("approving STB for vault...");
+          const tx = await _stbToken.getFunction("approve")(env.stableVaultAddress, (1n << 255n));
+          await tx.wait();
+        }
+
+        // 2. Check Balance & Auto-Fund
+        const balance = (await _stbToken.getFunction("balanceOf")(keeperAddress)) as bigint;
+        if (balance < repayAmount) {
+          logger.info("keeper low on STB, auto-funding for demo...");
+          // Deposit 100 ETH
+          const tx1 = await stableVault.deposit(parseUnits("100", 18), { value: parseUnits("100", 18) });
+          await tx1.wait();
+          // Mint 100,000 STB
+          const tx2 = await stableVault.mint(parseUnits("100000", 18));
+          await tx2.wait();
+          logger.info("keeper auto-funded with 100k STB");
+        }
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, "failed to auto-fund keeper");
+  }
+  // ------------------------------------------
+
   for (const owner of candidates) {
     try {
       const liquidatable = (await stableVault.isLiquidatable(owner)) as boolean;
@@ -196,9 +225,9 @@ export async function runKeeperTick(): Promise<void> {
       note:
         failures.length > 0
           ? failures
-              .slice(0, 5)
-              .map((item) => `${item.owner}:${item.attempts}:${item.reason.slice(0, 80)}`)
-              .join(" | ")
+            .slice(0, 5)
+            .map((item) => `${item.owner}:${item.attempts}:${item.reason.slice(0, 80)}`)
+            .join(" | ")
           : null
     }
   });

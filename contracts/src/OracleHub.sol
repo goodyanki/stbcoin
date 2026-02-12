@@ -56,7 +56,6 @@ contract OracleHub is Ownable {
     /// @param priceE18 Demo ETH/USD price in 1e18 precision.
     function setDemoPrice(uint256 priceE18) external onlyOwner {
         if (!demoMode) revert InvalidPrice();
-        if (priceE18 == 0) revert InvalidPrice();
         demoPriceE18 = priceE18;
         emit DemoPriceSet(priceE18);
     }
@@ -97,7 +96,7 @@ contract OracleHub is Ownable {
             bool breakerTriggered
         )
     {
-        if (demoMode && demoPriceE18 > 0) {
+        if (demoMode) {
             return
                 (demoPriceE18, demoPriceE18, demoPriceE18, block.timestamp, block.timestamp, false);
         }

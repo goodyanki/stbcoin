@@ -311,7 +311,7 @@ contract StableVault is Ownable, ReentrancyGuard {
     /// @dev Callable only by owner. Price must be within basic sanity bounds.
     /// @param priceE18 ETH/USD price in 1e18 precision.
     function setDemoPrice(uint256 priceE18) external onlyOwner {
-        if (priceE18 == 0 || priceE18 > 1e24) revert InvalidParams();
+        if (priceE18 > 1e24) revert InvalidParams();
         _oracleAdminSetDemoPrice(priceE18);
         emit DemoPriceSet(priceE18);
     }

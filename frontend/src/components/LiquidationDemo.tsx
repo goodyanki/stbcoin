@@ -56,7 +56,7 @@ export function LiquidationDemo() {
                     <Text code style={{ fontSize: 16 }}>${priceDraft}</Text>
                 </Row>
                 <Slider
-                    min={900}
+                    min={0}
                     max={4000}
                     step={10}
                     value={priceDraft}
